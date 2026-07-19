@@ -105,6 +105,7 @@ function startMatch() {
     const [sx2, sz2] = spawnPos(q.id);
     q.hp = 100; q.armor = 0; q.helmet = false; q.bag = 0; q.w = '';
     q.alive = true; q.x = sx2; q.z = sz2; q.kills = 0; q.d = 1; q.ready = false;
+    q.spectating = false;
   }
   broadcast({ t: 'start', seed });
   console.log('[게임 시작] 시드 ' + seed + ' (' + players.size + '명)');
@@ -114,7 +115,8 @@ const WIDX = { '': 0, rifle: 1, shotgun: 2, sniper: 3 };
 wss.on('connection', (ws) => {
   const id = nextId++;
   const [sx, sz] = spawnPos(id);
-  const p = { ws, id, name: '플레이어' + id, x: sx, y: 0, z: sz, yaw: 0, pitch: 0, stance: 'stand', hp: 100, armor: 0, helmet: false, bag: 0, w: '', alive: true, kills: 0, color: (id-1)%8, ready: false, d: 0 };
+  const joinedMidGame = (gameState === 'playing');
+  const p = { ws, id, name: '플레이어' + id, x: sx, y: 0, z: sz, yaw: 0, pitch: 0, stance: 'stand', hp: 100, armor: 0, helmet: false, bag: 0, w: '', alive: !joinedMidGame, kills: 0, color: (id-1)%8, ready: false, d: 0, spectating: joinedMidGame };
   players.set(id, p);
   send(p, {
     t: 'init', id, seed, spawn: [sx, sz], taken: [...taken], state: gameState,
@@ -317,7 +319,7 @@ function endMatch(winnerName, winnerKills) {
     taken = new Set();
     for (const q of players.values()) {
       q.hp = 100; q.armor = 0; q.helmet = false; q.bag = 0; q.w = '';
-      q.alive = true; q.kills = 0; q.ready = false; q.d = 0;
+      q.alive = true; q.kills = 0; q.ready = false; q.d = 0; q.spectating = false;
     }
     broadcast({ t: 'tolobby', seed });
     sendLobby();
@@ -390,7 +392,7 @@ setInterval(() => {
 // ---------- 스냅샷 (20Hz) ----------
 setInterval(() => {
   if (players.size === 0 || gameState !== 'playing') return;
-  const list = [...players.values()].map(p =>
+  const list = [...players.values()].filter(p => !p.spectating).map(p =>
     [p.id, +p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2), +p.yaw.toFixed(3),
      p.stance === 'prone' ? 1 : 0, Math.round(p.hp), p.alive ? 1 : 0,
      p.helmet ? 1 : 0, p.bag, WIDX[p.w] || 0, Math.round(p.armor), p.d || 0, p.color]);

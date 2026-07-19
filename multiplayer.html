@@ -362,15 +362,22 @@ function addHouse(cx,cz,w,d,floors){
   if(wrng(0,1)<0.65){
     box(wrng(-w/4,w/4),0.12,wrng(-d/4,0),1.1,0.8,0.8,stairMat,{block:true});
   }
+  // 계단이 차지하는 통로(스트립)의 z 범위: 앞벽(inF) 바로 안쪽부터 계단 끝까지 + 여유
+  const stairTopZ=inF-0.35-stairN*stairRun;
+  const openZ0=stairTopZ-0.5;     // 통로 개방 시작(뒤쪽)
+  const openZ1=inF+0.01;          // 통로 개방 끝(앞벽)
   const topSlab=flatRoof?floors:floors-1;
   for(let j=1;j<=topSlab;j++){
     const sy=0.22,fy=j*FLOOR_H-sy;
     const s=sideOf(j-1);
-    const holeZ0=inF-stairRun*stairN-0.9;
     const strip0=s>0?inL:inR-stairW,strip1=strip0+stairW;
+    // 슬래브를 '통로 스트립을 제외한 나머지'로 4조각 구성 → 계단 통로는 완전히 뚫림
+    // 1) 스트립 옆(좌/우) 전체 깊이
     const o0=s>0?strip1:inL,o1=s>0?inR:strip0;
-    box((o0+o1)/2,fy,0,o1-o0,sy,d-2*T,floorMat,{walk:true});
-    if(holeZ0>inB+0.2) box((strip0+strip1)/2,fy,(inB+holeZ0)/2,stairW,sy,holeZ0-inB,floorMat,{walk:true});
+    if(o1-o0>0.05) box((o0+o1)/2,fy,0,o1-o0,sy,d-2*T,floorMat,{walk:true});
+    // 2) 스트립 위, 통로 뒤쪽(계단 시작 이전 구간)은 바닥 채움
+    if(openZ0>inB+0.05) box((strip0+strip1)/2,fy,(inB+openZ0)/2,stairW,sy,openZ0-inB,floorMat,{walk:true});
+    // 3) 스트립의 통로 구간(openZ0~openZ1)은 뚫어둔다(슬래브 없음)
   }
   for(let k=0;k<flightCount;k++){
     const rise=FLOOR_H/stairN;
@@ -380,10 +387,9 @@ function addHouse(cx,cz,w,d,floors){
       const zC=inF-0.35-i*stairRun-stairRun/2;
       box(sx0,k*FLOOR_H,zC,stairW-0.15,topY-k*FLOOR_H,stairRun+0.14,stairMat,{});
     }
-    const stairTopZ=inF-0.35-stairN*stairRun;
     ramps.push({x:cx+sx0,hx:(stairW-0.15)/2+0.22,zA:cz+inF-0.05,zB:cz+stairTopZ,yA:baseY+k*FLOOR_H,yB:baseY+(k+1)*FLOOR_H});
-    const holeZ0=inF-stairRun*stairN-0.9;
-    box(sx0,(k+1)*FLOOR_H-0.2,(stairTopZ+holeZ0)/2-0.2,stairW-0.15,0.2,(stairTopZ-holeZ0)+1.4,floorMat,{walk:true});
+    // 계단 도착 지점(위층)에 작은 착지판만 (통로는 그대로 열림)
+    box(sx0,(k+1)*FLOOR_H-0.2,openZ0-0.25,stairW-0.15,0.2,0.9,floorMat,{walk:true});
   }
   if(flatRoof){
     const ph=0.9,ry=totalH;
@@ -700,6 +706,25 @@ function takeAmmo(n){
 }
 function sendGear(){
   if(ws&&ws.readyState===1) ws.send(JSON.stringify({t:'gear',armor:armorLocal,helmet:hasHelmet,bag:bagLevel}));
+}
+function canPickupItem(it){
+  const type=it.type;
+  // 착용형/개봉형은 항상 가능(슬롯 안 씀)
+  if(type==='helmet') return !hasHelmet;
+  if(type==='vest') return armorLocal<100;
+  if(type==='backpack') return (it.level||1)>bagLevel;
+  if(type==='crate'||type==='airdrop') return true;
+  // 스택 가능한 것은 기존 슬롯에 여유 있으면 가능
+  if(type==='ammo'){
+    for(const sl of inventory){ if(sl.type==='ammo'&&sl.count<STACK.ammo) return true; }
+    return inventory.length<capacity();
+  }
+  if(STACK[type]!==undefined){
+    for(const sl of inventory){ if(sl.type===type&&sl.count<STACK[type]) return true; }
+    return inventory.length<capacity();
+  }
+  // 무기 등 슬롯 차지
+  return inventory.length<capacity();
 }
 function addToInventory(type){
   if(type==='helmet'||type==='vest'||type==='backpack') return false;
@@ -1464,11 +1489,9 @@ function connect(){
       player.pos.set(m.spawn[0],terrainH(m.spawn[0],m.spawn[1])+EYE_STAND,m.spawn[1]);
       for(const q of m.players){const r=addRemote(q.id,q.name,q.x,q.y,q.z);r.hp=q.hp;r.alive=!!q.alive;r.stance=q.stance;if(q.color!==undefined)setRemoteColor(r,q.color);}
       netReady=true;
-      // 접속 시 이미 게임 중이면: 대기실은 건너뛰고 관전+강하 대기 (다음 판 자동 합류)
+      // 접속 시 이미 게임 중이면: 대기실에서 '게임 진행 중' 표시하며 다음 판 대기
       if(gameState==='playing'){
-        announce('게임 진행 중 — 함께 시작합니다');
-        started=true;
-        beginMatch();
+        waitingForNext=true;
       }
     }
     else if(m.t==='pjoin'){const r=addRemote(m.id,m.name,0,3,0);if(m.color!==undefined)setRemoteColor(r,m.color);}
@@ -1477,7 +1500,7 @@ function connect(){
       lobbyPlayers=m.players||[];
       const me=lobbyPlayers.find(p=>p.id===myId);
       if(me&&me.color!==undefined)myColor=me.color;
-      if(inLobby)renderLobby();
+      if(inLobby){ renderLobby(); updateLobbyMode(); }
     }
     else if(m.t==='pcolor'){
       const r=remotes.get(m.id);
@@ -1485,12 +1508,15 @@ function connect(){
     }
     else if(m.t==='start'){
       gameState='playing';
+      spectator=false;
       // 서버 시드와 내 월드 시드가 다르면(늦게 합류 등) 새로 만든다
       if(m.seed!==undefined && m.seed!==SEED){ SEED=m.seed; rebuildWorld(); }
       beginMatch();
     }
     else if(m.t==='tolobby'){
       gameState='lobby';
+      spectator=false;
+      waitingForNext=false;
       player.dead=false; player.hp=100;
       document.getElementById('deadoverlay').style.display='none';
       document.exitPointerLock();
@@ -1549,7 +1575,13 @@ function connect(){
     else if(m.t==='takeok'){
       const it=itemsByIdx.get(m.idx);
       takenSet.add(m.idx);
-      if(m.by===myId&&it){applyPickup(it);}
+      if(m.by===myId&&it){
+        // 최종 안전장치: 혹시 못 주우면 같은 아이템을 서버에 되돌려 재배치
+        const okk=applyPickup(it);
+        if(okk===false && ws&&ws.readyState===1){
+          ws.send(JSON.stringify({t:'drop',type:it.type,x:it.x,z:it.z}));
+        }
+      }
       removeItemIdx(m.idx);
     }
     else if(m.t==='itemadd'){
@@ -1655,9 +1687,16 @@ function connect(){
         player.dead=true;player.hp=0;updateHUD();
         if(driving)exitCarLocal(true);
         if(passengerCar)exitPassengerLocal(true);
+        // 관전 모드 진입: 죽은 지점 위에서 자유 비행 시작
+        spectator=true;
+        specPos.set(player.pos.x, player.pos.y+8, player.pos.z);
         document.getElementById('deadoverlay').style.display='block';
         document.getElementById('deadinfo').textContent=m.killer+'에게 당했습니다 · 처치 '+player.kills;
-        document.exitPointerLock();
+        // 관전 안내로 교체
+        const dp=document.querySelectorAll('#deadoverlay p');
+        if(dp[1]) dp[1].textContent='관전 모드 — WASD 이동 · 마우스 시점 · 게임 종료 시 대기실로';
+        // 포인터락 유지(마우스로 둘러보기 위해). 다시 클릭하면 잠김
+        setTimeout(()=>{ if(spectator&&!document.pointerLockElement) canvas.requestPointerLock(); }, 100);
       } else {
         const r=remotes.get(m.victimId);
         if(r)r.alive=false;
@@ -1671,17 +1710,17 @@ function connect(){
 function applyPickup(it){
   const type=it.type;
   if(type==='helmet'){
-    if(hasHelmet){announce('이미 헬멧 착용 중');return;}
-    hasHelmet=true;sendGear();announce('헬멧 착용 — 피해 15% 감소');return;
+    if(hasHelmet){announce('이미 헬멧 착용 중');return true;}
+    hasHelmet=true;sendGear();announce('헬멧 착용 — 피해 15% 감소');return true;
   }
   if(type==='vest'){
-    if(armorLocal>=100){announce('이미 조끼 착용 중');return;}
-    armorLocal=100;sendGear();announce('방탄조끼 착용 — 방어력 100');updateHUD();return;
+    if(armorLocal>=100){announce('이미 조끼 착용 중');return true;}
+    armorLocal=100;sendGear();announce('방탄조끼 착용 — 방어력 100');updateHUD();return true;
   }
   if(type==='backpack'){
     const lv=it.level||1;
-    if(lv<=bagLevel){announce('이미 Lv'+bagLevel+' 가방 착용 중');return;}
-    bagLevel=lv;sendGear();announce('가방 Lv'+lv+' — 소지품 '+capacity()+'칸');renderInv();return;
+    if(lv<=bagLevel){announce('이미 Lv'+bagLevel+' 가방 착용 중');return true;}
+    bagLevel=lv;sendGear();announce('가방 Lv'+lv+' — 소지품 '+capacity()+'칸');renderInv();return true;
   }
   if(type==='crate'||type==='airdrop'){
     const n=type==='airdrop'?4:(2+Math.floor(rng(0,2)));
@@ -1692,10 +1731,10 @@ function applyPickup(it){
     for(let i=0;i<n;i++){
       if(ws&&ws.readyState===1)ws.send(JSON.stringify({t:'drop',type:pool[Math.floor(rng(0,pool.length))],x:player.pos.x+rng(-2.4,2.4),z:player.pos.z+rng(1.5,3.5)}));
     }
-    return;
+    return true;
   }
-  if(addToInventory(type)){announce(itemLabel(it)+' 획득');updateHUD();}
-  else announce('가방이 가득 찼습니다 ('+inventory.length+'/'+capacity()+')');
+  if(addToInventory(type)){announce(itemLabel(it)+' 획득');updateHUD();return true;}
+  else { announce('가방이 가득 찼습니다 ('+inventory.length+'/'+capacity()+')'); return false; }
 }
 
 // ================= 사운드 =================
@@ -1739,7 +1778,7 @@ let sprintOn=false,shiftUsed=false;
 // ================= 대기실(로비) =================
 const AVATAR_COLORS=[0xc27f5a,0x5a8ac2,0x6bbf5a,0xc25a8a,0xc2b45a,0x9a5ac2,0x5ac2b4,0xc26b3a];
 const AVATAR_NAMES=['주황','파랑','초록','분홍','노랑','보라','청록','갈색'];
-let myColor=0, inLobby=false, lobbyPlayers=[];
+let myColor=0, inLobby=false, lobbyPlayers=[], waitingForNext=false;
 function buildColorPicker(){
   const cp=document.getElementById('colorpicker');
   cp.innerHTML='';
@@ -1784,6 +1823,20 @@ function enterLobby(){
   buildColorPicker();
   renderLobby();
   audio();
+  updateLobbyMode();
+}
+function updateLobbyMode(){
+  const sub=document.getElementById('lobbysub');
+  const rb=document.getElementById('readybtn');
+  const sb=document.getElementById('startmatchbtn');
+  if(waitingForNext || gameState==='playing'){
+    sub.innerHTML='🎮 <b style="color:#ff8a5a">게임 진행 중</b> — 현재 판이 끝나면 다음 판에 참여할 수 있습니다';
+    if(rb){ rb.style.display='none'; }
+    if(sb){ sb.style.display='none'; }
+  } else {
+    if(rb){ rb.style.display=''; }
+    if(sb){ sb.style.display=''; }
+  }
 }
 document.getElementById('startbtn').addEventListener('click',()=>{
   const inp=document.getElementById('nameinput');
@@ -1822,10 +1875,11 @@ function beginMatch(){
   announce('✈ 수송기 이륙! Space로 원하는 지점에서 강하');
 }
 try{const saved=localStorage.getItem('bg_name');if(saved)document.getElementById('nameinput').value=saved;}catch(e){}
-canvas.addEventListener('click',()=>{if(started&&!player.dead)canvas.requestPointerLock();});
+canvas.addEventListener('click',()=>{if(started&&(!player.dead||spectator))canvas.requestPointerLock();});
 document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===canvas;});
 document.addEventListener('mousemove',e=>{
-  if(!locked||player.dead)return;
+  if(!locked)return;
+  if(player.dead&&!spectator)return;
   const sens=0.0022*(camera.fov/BASE_FOV);
   player.yaw-=e.movementX*sens;
   player.pitch-=e.movementY*sens;
@@ -1945,6 +1999,13 @@ function updateItems(dt){
 }
 function tryPickup(){
   if(nearItemIdx<0)return;
+  const it=itemsByIdx.get(nearItemIdx);
+  if(!it)return;
+  // 인벤토리가 꽉 차서 줍지 못하는 경우 서버에 요청조차 하지 않음(아이템이 사라지는 버그 방지)
+  if(!canPickupItem(it)){
+    announce('가방이 가득 찼습니다 ('+inventory.length+'/'+capacity()+'칸) — 버리고 주우세요');
+    return;
+  }
   if(ws&&ws.readyState===1)ws.send(JSON.stringify({t:'take',idx:nearItemIdx}));
 }
 
@@ -2075,7 +2136,32 @@ function updatePassenger(dt){
   } else camera.position.copy(player.pos);
   applyFov(dt);
 }
+let spectator=false;
+const specPos=new THREE.Vector3();
+function updateSpectator(dt){
+  // 자유 비행 관전: WASD 수평 이동, Space/Shift 상하, 마우스로 시점
+  const spd=(keys['ShiftLeft']?40:20)*dt;
+  const f=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+  const r=new THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion);
+  if(keys['KeyW'])specPos.addScaledVector(f,spd);
+  if(keys['KeyS'])specPos.addScaledVector(f,-spd);
+  if(keys['KeyA'])specPos.addScaledVector(r,-spd);
+  if(keys['KeyD'])specPos.addScaledVector(r,spd);
+  if(keys['Space'])specPos.y+=spd;
+  if(keys['ControlLeft']||keys['KeyC'])specPos.y-=spd;
+  specPos.x=clamp(specPos.x,-MAP_HALF,MAP_HALF);
+  specPos.z=clamp(specPos.z,-MAP_HALF,MAP_HALF);
+  specPos.y=clamp(specPos.y,2,300);
+  camera.position.copy(specPos);
+  camera.rotation.set(0,0,0);
+  camera.rotateY(player.yaw);
+  camera.rotateX(player.pitch);
+  camera.fov+=(BASE_FOV-camera.fov)*Math.min(1,dt*10);
+  camera.updateProjectionMatrix();
+  gunGroup.visible=false;
+}
 function updatePlayer(dt){
+  if(spectator){ updateSpectator(dt); return; }
   if(player.dead||!worldBuilt)return;
   if(dropPhase!=='game'){updateDrop(dt);return;}
   if(passengerCar){updatePassenger(dt);return;}
