@@ -1,0 +1,1945 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>BATTLE GROUNDS ONLINE 2 - 멀티플레이</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#000; font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif; }
+  #game { width:100%; height:100%; display:block; }
+  #hud { position:fixed; inset:0; pointer-events:none; user-select:none; }
+  #crosshair { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); }
+  #crosshair span { position:absolute; background:#fff; box-shadow:0 0 2px #000; }
+  #crosshair .t { width:2px; height:8px; left:-1px; top:-14px; }
+  #crosshair .b { width:2px; height:8px; left:-1px; top:6px; }
+  #crosshair .l { width:8px; height:2px; left:-14px; top:-1px; }
+  #crosshair .r { width:8px; height:2px; left:6px; top:-1px; }
+  #scope { position:absolute; inset:0; display:none; }
+  #scope .dark { position:absolute; inset:0; background:radial-gradient(circle at 50% 50%, rgba(0,0,0,0) 0, rgba(0,0,0,0) 33vmin, rgba(5,5,8,.98) 34.5vmin); }
+  #scope .ring { position:absolute; left:50%; top:50%; width:67vmin; height:67vmin; transform:translate(-50%,-50%); border:6px solid #0a0a0d; border-radius:50%; }
+  #scope .hline { position:absolute; left:50%; top:50%; width:66vmin; height:1.5px; background:#111; transform:translate(-50%,-50%); }
+  #scope .vline { position:absolute; left:50%; top:50%; width:1.5px; height:66vmin; background:#111; transform:translate(-50%,-50%); }
+  #scope .dot { position:absolute; left:50%; top:50%; width:5px; height:5px; background:#c22; border-radius:50%; transform:translate(-50%,-50%); }
+  #hitmarker { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%) rotate(45deg); opacity:0; transition:opacity .12s; }
+  #hitmarker span { position:absolute; background:#ff3b3b; width:2px; height:9px; box-shadow:0 0 3px #000; }
+  #hitmarker .a{left:-8px;top:-12px;} #hitmarker .b{left:6px;top:-12px;} #hitmarker .c{left:-8px;top:3px;} #hitmarker .d{left:6px;top:3px;}
+  #dmgflash { position:absolute; inset:0; background:radial-gradient(ellipse at center, transparent 40%, rgba(255,0,0,.45) 100%); opacity:0; transition:opacity .3s; }
+  #zoneflash { position:absolute; inset:0; background:radial-gradient(ellipse at center, transparent 45%, rgba(40,90,255,.4) 100%); opacity:0; transition:opacity .4s; }
+  #bottombar { position:absolute; bottom:20px; left:50%; transform:translateX(-50%); width:420px; }
+  #armorwrap { width:100%; height:5px; margin-bottom:3px; background:rgba(0,0,0,.4); border-radius:2px; overflow:hidden; }
+  #armorbar { height:100%; width:0%; background:#5aa2ff; }
+  #healthwrap { width:100%; height:16px; background:rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.35); border-radius:3px; overflow:hidden; }
+  #healthbar { height:100%; width:100%; background:linear-gradient(#f5f5f5,#cfcfcf); transition:width .15s; }
+  #invbar { position:absolute; bottom:62px; left:50%; transform:translateX(-50%); display:flex; gap:5px; }
+  .slot { width:72px; height:46px; background:rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.25); border-radius:4px; color:#fff; font-size:11px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-shadow:0 1px 2px #000; }
+  .slot .num { font-size:9px; color:#999; }
+  .slot .cnt { color:#ffd76a; }
+  .slot.sel { border-color:#ffd76a; box-shadow:0 0 8px rgba(255,215,106,.4); }
+  .slot.empty { border-style:dashed; color:#666; }
+  #ammobox { position:absolute; right:28px; bottom:20px; text-align:right; color:#fff; text-shadow:0 1px 3px #000; }
+  #ammobox .cur { font-size:38px; font-weight:bold; }
+  #ammobox .res { font-size:20px; color:#ccc; }
+  #weaponname { font-size:13px; color:#ffd76a; letter-spacing:1px; }
+  #speedo { position:absolute; left:28px; bottom:20px; color:#fff; text-shadow:0 1px 3px #000; display:none; }
+  #speedo .kmh { font-size:38px; font-weight:bold; }
+  #speedo .unit { font-size:13px; color:#bbb; }
+  #speedo .fuel { font-size:14px; color:#ffb23d; }
+  #speedo .carhp { font-size:14px; color:#7fdc7f; }
+  #stance { position:absolute; left:28px; bottom:80px; color:#ffd76a; font-size:13px; text-shadow:0 1px 3px #000; display:none; background:rgba(0,0,0,.4); padding:4px 10px; border-radius:4px; }
+  #topbar { position:absolute; top:16px; left:50%; transform:translateX(-50%); display:flex; gap:10px; align-items:center; }
+  .pill { background:rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.2); color:#fff; padding:6px 14px; border-radius:4px; font-size:14px; text-shadow:0 1px 2px #000; }
+  #alivepill b { color:#ffd76a; font-size:18px; }
+  #killpill b { color:#ff6a3d; font-size:18px; }
+  #zonetimer { min-width:130px; text-align:center; }
+  #zonetimer.warn { border-color:#4d9fff; color:#8fc2ff; }
+  #killfeed { position:absolute; top:70px; right:20px; width:380px; text-align:right; }
+  .feeditem { color:#fff; font-size:13px; margin-bottom:5px; background:rgba(0,0,0,.5); display:inline-block; padding:4px 10px; border-radius:3px; text-shadow:0 1px 2px #000; animation:fadein .2s; }
+  .feeditem b { color:#ff6a3d; }
+  .feeditem .me { color:#ffd76a; }
+  @keyframes fadein { from{opacity:0; transform:translateX(20px);} to{opacity:1;} }
+  #minimapwrap { position:absolute; right:20px; bottom:100px; border:2px solid rgba(255,255,255,.35); border-radius:4px; overflow:hidden; background:#2a3d24; }
+  #minimap { display:block; }
+  #announce { position:absolute; top:22%; left:50%; transform:translateX(-50%); color:#fff; font-size:21px; text-shadow:0 2px 6px #000; text-align:center; opacity:0; transition:opacity .4s; background:rgba(0,0,0,.35); padding:10px 26px; border-radius:6px; max-width:80vw; }
+  #hint { position:absolute; bottom:130px; left:50%; transform:translateX(-50%); color:#fff; background:rgba(0,0,0,.55); padding:6px 16px; border-radius:4px; font-size:14px; display:none; }
+  #hint b { color:#ffd76a; }
+  .screen { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; background:linear-gradient(rgba(8,10,14,.9),rgba(8,10,14,.95)), repeating-linear-gradient(45deg, #10141a 0 12px, #0c0f14 12px 24px); color:#fff; z-index:10; }
+  .screen h1 { font-size:44px; letter-spacing:6px; color:#ffd76a; text-shadow:0 3px 0 #7a5a00, 0 6px 20px #000; margin-bottom:6px; }
+  .screen h2 { font-size:15px; color:#bbb; font-weight:normal; letter-spacing:3px; margin-bottom:22px; }
+  .controls { background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.15); border-radius:8px; padding:14px 28px; margin-bottom:20px; font-size:13px; line-height:1.9; color:#ddd; }
+  .controls b { color:#ffd76a; }
+  #nameinput { pointer-events:auto; font-size:18px; padding:10px 16px; border-radius:4px; border:1px solid #666; background:#1a1e26; color:#fff; text-align:center; margin-bottom:16px; width:280px; }
+  .bigbtn { pointer-events:auto; cursor:pointer; font-size:20px; letter-spacing:2px; padding:14px 60px; background:#ffd76a; color:#1a1a1a; border:none; border-radius:4px; font-weight:bold; box-shadow:0 4px 0 #a8862c; }
+  .bigbtn:hover { background:#ffe38f; }
+  #deadoverlay { display:none; position:fixed; inset:0; background:rgba(20,0,0,.45); z-index:5; pointer-events:none; color:#fff; text-align:center; padding-top:24vh; }
+  #deadoverlay h1 { font-size:40px; color:#ff5b5b; text-shadow:0 3px 0 #6d0f0f; }
+  #deadoverlay p { font-size:16px; color:#ddd; margin-top:12px; }
+  #connstatus { font-size:13px; color:#8fc2ff; margin-bottom:12px; min-height:18px; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud">
+  <div id="dmgflash"></div>
+  <div id="zoneflash"></div>
+  <div id="crosshair"><span class="t"></span><span class="b"></span><span class="l"></span><span class="r"></span></div>
+  <div id="scope"><div class="dark"></div><div class="ring"></div><div class="hline"></div><div class="vline"></div><div class="dot"></div></div>
+  <div id="hitmarker"><span class="a"></span><span class="b"></span><span class="c"></span><span class="d"></span></div>
+  <div id="topbar">
+    <div class="pill" id="alivepill">생존 <b id="alivecount">-</b></div>
+    <div class="pill" id="zonetimer">자기장 대기</div>
+    <div class="pill" id="killpill">처치 <b id="killcount">0</b></div>
+  </div>
+  <div id="killfeed"></div>
+  <div id="minimapwrap"><canvas id="minimap" width="190" height="190"></canvas></div>
+  <div id="invbar"></div>
+  <div id="bottombar"><div id="armorwrap"><div id="armorbar"></div></div><div id="healthwrap"><div id="healthbar"></div></div></div>
+  <div id="speedo">
+    <div><span class="kmh" id="kmh">0</span> <span class="unit">km/h</span></div>
+    <div class="fuel">⛽ <span id="fuelval">0</span></div>
+    <div class="carhp">🔧 <span id="carhpval">500</span></div>
+  </div>
+  <div id="stance">엎드림</div>
+  <div id="ammobox">
+    <div id="weaponname">맨손</div>
+    <div><span class="cur" id="ammocur">-</span> <span class="res" id="ammores">/ 0</span></div>
+  </div>
+  <div id="hint"><b>E</b> 줍기</div>
+  <div id="announce"></div>
+</div>
+<div id="deadoverlay">
+  <h1>전사했습니다</h1>
+  <p id="deadinfo"></p>
+  <p>라운드가 끝나면 자동으로 재시작됩니다</p>
+</div>
+<div class="screen" id="startscreen">
+  <h1>BATTLE GROUNDS ONLINE</h1>
+  <h2>2단계 — 파밍 · 무기 3종 · 수류탄 · 차량 · 보급 · 폭격</h2>
+  <div class="controls">
+    <div><b>WASD</b> 이동 · <b>Shift</b> 달리기 · <b>Space</b> 점프 · <b>C</b> 엎드리기 · <b>E</b> 줍기 · <b>F</b> 차량</div>
+    <div><b>1~8</b> 소지품 · <b>Shift+1~8</b> 버리기 · <b>R</b> 재장전 · <b>G</b> 길게 눌러 수류탄</div>
+    <div><b>좌클릭</b> 사격/주먹 · <b>우클릭</b> 조준 (Kar98k 8배율) · <b>V</b> 1/3인칭 · <b>M</b> 효과음</div>
+    <div style="margin-top:6px;color:#aaa">— 모두 맨손 시작 · 같은 맵 파밍 경쟁 · 마지막 1인 승리 —</div>
+  </div>
+  <div id="connstatus"></div>
+  <input id="nameinput" maxlength="12" placeholder="닉네임 입력">
+  <button class="bigbtn" id="startbtn">전장 진입</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+"use strict";
+
+// ================= 시드 난수 =================
+let SEED=1, sr=null;
+function mulberry32(a){
+  return function(){
+    a|=0; a=a+0x6D2B79F5|0;
+    let t=Math.imul(a^a>>>15,1|a);
+    t=t+Math.imul(t^t>>>7,61|t)^t;
+    return ((t^t>>>14)>>>0)/4294967296;
+  };
+}
+const wrng=(a,b)=>a+sr()*(b-a);
+const rng=(a,b)=>a+Math.random()*(b-a);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+
+// ================= 렌더러 =================
+const canvas=document.getElementById('game');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.6));
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x9db8d2);
+scene.fog=new THREE.Fog(0x9db8d2,140,650);
+const camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,0.1,2000);
+const BASE_FOV=75, ADS_FOV_RIFLE=45, ADS_FOV_SNIPER=11;
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+const sun=new THREE.DirectionalLight(0xfff3d6,1.15);
+sun.position.set(180,320,120);
+sun.castShadow=true;
+sun.shadow.mapSize.set(2048,2048);
+sun.shadow.camera.left=-380;sun.shadow.camera.right=380;
+sun.shadow.camera.top=380;sun.shadow.camera.bottom=-380;
+sun.shadow.camera.far=1000;
+scene.add(sun);
+scene.add(new THREE.AmbientLight(0xbfd4e8,0.55));
+scene.add(new THREE.HemisphereLight(0xcfe4ff,0x5a6b4a,0.35));
+
+// ================= 월드 =================
+const MAP_HALF=600;
+const obstacles=[],solids=[],platforms=[],ramps=[];
+let mountainDefs=[],townDefs=[],flats=[],flatH=[];
+const mmBuildings=[];
+let worldBuilt=false;
+const itemSpawnQueue=[];
+const carSpawns=[];
+
+function rawH(x,z){
+  let h=Math.sin(x*0.008)*Math.cos(z*0.009)*3.0+Math.sin(x*0.027+2)*Math.sin(z*0.023)*1.2;
+  for(let i=0;i<mountainDefs.length;i++){
+    const m=mountainDefs[i];
+    const d2=((x-m.x)*(x-m.x)+(z-m.z)*(z-m.z))/(m.r*m.r);
+    if(d2<6) h+=m.h*Math.exp(-d2*1.6);
+  }
+  return h;
+}
+function terrainH(x,z){
+  let h=rawH(x,z);
+  for(let i=0;i<flats.length;i++){
+    const f=flats[i];
+    const d=Math.hypot(x-f.x,z-f.z);
+    if(d<f.r){
+      const k=Math.min(1,Math.max(0,(f.r-d)/(f.r*0.45)));
+      h=h*(1-k)+flatH[i]*k;
+    }
+  }
+  return h;
+}
+function collideEnt(nx,nz,rad,fy){
+  for(let i=0;i<obstacles.length;i++){
+    const o=obstacles[i];
+    if(Math.abs(nx-o.x)<o.hx+rad&&Math.abs(nz-o.z)<o.hz+rad){
+      if(o.y0<fy+1.5&&o.y1>fy+0.4) return true;
+    }
+  }
+  for(let i=0;i<cars.length;i++){
+    const c=cars[i];
+    if(c===driving) continue;
+    if(Math.hypot(nx-c.mesh.position.x,nz-c.mesh.position.z)<1.9+rad){
+      if(Math.abs(fy-c.mesh.position.y)<2.4) return true;
+    }
+  }
+  return false;
+}
+function depenetrate(px,pz,rad,fy){
+  for(let i=0;i<obstacles.length;i++){
+    const o=obstacles[i];
+    const dx=px-o.x,dz=pz-o.z;
+    if(Math.abs(dx)<o.hx+rad&&Math.abs(dz)<o.hz+rad&&o.y0<fy+1.5&&o.y1>fy+0.4){
+      const pushX=(o.hx+rad-Math.abs(dx))*(dx>=0?1:-1);
+      const pushZ=(o.hz+rad-Math.abs(dz))*(dz>=0?1:-1);
+      if(Math.abs(pushX)<Math.abs(pushZ)) px+=pushX; else pz+=pushZ;
+    }
+  }
+  return [px,pz];
+}
+function terrainHitDist(ox,oy,oz,dx,dy,dz,maxDist){
+  for(let t=3;t<=maxDist;t+=3){
+    if(oy+dy*t<terrainH(ox+dx*t,oz+dz*t)) return t;
+  }
+  return -1;
+}
+function groundYAt(x,z,feetY,airborne){
+  let g=terrainH(x,z);
+  for(let i=0;i<platforms.length;i++){
+    const p=platforms[i];
+    if(Math.abs(x-p.x)<=p.hx&&Math.abs(z-p.z)<=p.hz){
+      if(p.y>g&&(airborne?p.y<=feetY+0.03:p.y<=feetY+0.55)) g=p.y;
+    }
+  }
+  for(let i=0;i<ramps.length;i++){
+    const r=ramps[i];
+    if(Math.abs(x-r.x)<=r.hx&&z<=r.zA+0.001&&z>=r.zB-0.25){
+      const t=Math.min(1,Math.max(0,(r.zA-z)/(r.zA-r.zB)));
+      const ry=r.yA+(r.yB-r.yA)*t;
+      if(ry>g&&(airborne?ry<=feetY+0.05:ry<=feetY+0.75)) g=ry;
+    }
+  }
+  return g;
+}
+
+const wallColors=[0xb8a88f,0x9aa3ad,0xc2b7a3,0x93a08e,0xa89078];
+const roofMats=[new THREE.MeshLambertMaterial({color:0x7a4a3a}),new THREE.MeshLambertMaterial({color:0x53616e})];
+const floorMat=new THREE.MeshLambertMaterial({color:0x6e5a44});
+const stairMat=new THREE.MeshLambertMaterial({color:0x7d6a50});
+const foundMat=new THREE.MeshLambertMaterial({color:0x6f6a60});
+const T=0.35,DOOR_W=2.0,DOOR_H=2.3,FLOOR_H=3.0;
+
+function addHouse(cx,cz,w,d,floors){
+  for(let i=0;i<mmBuildings.length;i++){
+    const b=mmBuildings[i];
+    if(Math.abs(cx-b.x)<w/2+b.hx+2.5&&Math.abs(cz-b.z)<d/2+b.hz+2.5) return;
+  }
+  const baseY=terrainH(cx,cz);
+  const g=new THREE.Group();
+  g.position.set(cx,baseY,cz);
+  const wallMat=new THREE.MeshLambertMaterial({color:wallColors[Math.floor(wrng(0,wallColors.length))%wallColors.length]});
+  const totalH=floors*FLOOR_H;
+  const flatRoof=floors>1&&wrng(0,1)<0.65;
+  const upperWindow=wrng(0,1)<0.5;
+  const roofPick=Math.floor(wrng(0,2))%2;
+  const found=new THREE.Mesh(new THREE.BoxGeometry(w+0.5,5,d+0.5),foundMat);
+  found.position.y=-2.4;g.add(found);
+  function box(lx,ly,lz,sx,sy,sz,mat,opts){
+    const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),mat||wallMat);
+    m.position.set(lx,ly+sy/2,lz);
+    m.castShadow=true;m.receiveShadow=true;
+    g.add(m);
+    if(!opts||!opts.noSolid) solids.push(m);
+    if(opts&&opts.block) obstacles.push({x:cx+lx,z:cz+lz,hx:sx/2,hz:sz/2,y0:baseY+ly,y1:baseY+ly+sy});
+    if(opts&&opts.walk) platforms.push({x:cx+lx,z:cz+lz,hx:sx/2,hz:sz/2,y:baseY+ly+sy});
+    return m;
+  }
+  function doorWall(fy,zPos){
+    const segW=(w-DOOR_W)/2;
+    box(-(DOOR_W/2+segW/2),fy,zPos,segW,FLOOR_H,T,wallMat,{block:true});
+    box((DOOR_W/2+segW/2),fy,zPos,segW,FLOOR_H,T,wallMat,{block:true});
+    box(0,fy+DOOR_H,zPos,DOOR_W,FLOOR_H-DOOR_H,T,wallMat,{});
+  }
+  const inL=-w/2+T,inR=w/2-T,inB=-d/2+T,inF=d/2-T;
+  const stairW=1.6,stairRun=0.46,stairN=Math.ceil(FLOOR_H/0.34);
+  const flightCount=floors>1?(flatRoof?floors:floors-1):0;
+  const sideOf=k=>(k%2===0?1:-1);
+  const stripCX=s=>(s>0?inL+stairW/2:inR-stairW/2);
+  for(let k=0;k<floors;k++){
+    const fy=k*FLOOR_H;
+    box(0,fy,-d/2+T/2,w,FLOOR_H,T,wallMat,{block:true});
+    box(-w/2+T/2,fy,0,T,FLOOR_H,d,wallMat,{block:true});
+    box(w/2-T/2,fy,0,T,FLOOR_H,d,wallMat,{block:true});
+    if(k===0){ doorWall(fy,d/2-T/2); }
+    else if(upperWindow){
+      const gapW=Math.min(2.4,w-3.2);
+      const segW2=(w-gapW)/2;
+      box(-(gapW/2+segW2/2),fy,d/2-T/2,segW2,FLOOR_H,T,wallMat,{block:true});
+      box((gapW/2+segW2/2),fy,d/2-T/2,segW2,FLOOR_H,T,wallMat,{block:true});
+      box(0,fy,d/2-T/2,gapW,0.95,T,wallMat,{block:true});
+      box(0,fy+2.35,d/2-T/2,gapW,FLOOR_H-2.35,T,wallMat,{});
+    } else {
+      box(0,fy,d/2-T/2,w,1.15,T,wallMat,{block:true});
+    }
+  }
+  const topSlab=flatRoof?floors:floors-1;
+  for(let j=1;j<=topSlab;j++){
+    const sy=0.22,fy=j*FLOOR_H-sy;
+    const s=sideOf(j-1);
+    const holeZ0=inF-stairRun*stairN-0.9;
+    const strip0=s>0?inL:inR-stairW,strip1=strip0+stairW;
+    const o0=s>0?strip1:inL,o1=s>0?inR:strip0;
+    box((o0+o1)/2,fy,0,o1-o0,sy,d-2*T,floorMat,{walk:true});
+    if(holeZ0>inB+0.2) box((strip0+strip1)/2,fy,(inB+holeZ0)/2,stairW,sy,holeZ0-inB,floorMat,{walk:true});
+  }
+  for(let k=0;k<flightCount;k++){
+    const rise=FLOOR_H/stairN;
+    const s=sideOf(k),sx0=stripCX(s);
+    for(let i=0;i<stairN;i++){
+      const topY=k*FLOOR_H+(i+1)*rise;
+      const zC=inF-0.35-i*stairRun-stairRun/2;
+      box(sx0,k*FLOOR_H,zC,stairW-0.15,topY-k*FLOOR_H,stairRun+0.14,stairMat,{});
+    }
+    const stairTopZ=inF-0.35-stairN*stairRun;
+    ramps.push({x:cx+sx0,hx:(stairW-0.15)/2+0.22,zA:cz+inF-0.05,zB:cz+stairTopZ,yA:baseY+k*FLOOR_H,yB:baseY+(k+1)*FLOOR_H});
+    const holeZ0=inF-stairRun*stairN-0.9;
+    box(sx0,(k+1)*FLOOR_H-0.2,(stairTopZ+holeZ0)/2-0.2,stairW-0.15,0.2,(stairTopZ-holeZ0)+1.4,floorMat,{walk:true});
+  }
+  if(flatRoof){
+    const ph=0.9,ry=totalH;
+    box(0,ry,-d/2+T/2,w,ph,T,wallMat,{block:true});
+    box(0,ry,d/2-T/2,w,ph,T,wallMat,{block:true});
+    box(-w/2+T/2,ry,0,T,ph,d,wallMat,{block:true});
+    box(w/2-T/2,ry,0,T,ph,d,wallMat,{block:true});
+  } else {
+    box(0,totalH,0,w+0.6,0.26,d+0.6,roofMats[roofPick],{});
+  }
+  const fl=new THREE.Mesh(new THREE.BoxGeometry(w-T,0.12,d-T),floorMat);
+  fl.position.y=0.06;fl.receiveShadow=true;g.add(fl);
+  scene.add(g);
+  mmBuildings.push({x:cx,z:cz,hx:w/2,hz:d/2});
+  // 실내 아이템 (결정적 순서)
+  itemSpawnQueue.push([cx+wrng(-w/4,w/4),cz+wrng(-d/4,d/6),baseY]);
+  if(wrng(0,1)<0.6) itemSpawnQueue.push([cx+wrng(-w/4,w/4),cz+wrng(-d/4,d/6),baseY]);
+  if(floors>1) itemSpawnQueue.push([cx+wrng(0,w/4),cz+wrng(-d/4,d/6),baseY+(floors-1)*FLOOR_H+0.02]);
+  if(flatRoof) itemSpawnQueue.push([cx+wrng(-w/5,w/5),cz+wrng(-d/5,d/6),baseY+floors*FLOOR_H+0.02]);
+}
+
+function insideBld(x,z,m){
+  for(let i=0;i<mmBuildings.length;i++){
+    const b=mmBuildings[i];
+    if(Math.abs(x-b.x)<b.hx+m&&Math.abs(z-b.z)<b.hz+m) return true;
+  }
+  return false;
+}
+
+function buildWorld(){
+  sr=mulberry32(SEED);
+  mountainDefs=[];
+  for(let i=0;i<5;i++){
+    const a=(i/5)*Math.PI*2+wrng(-0.3,0.3);
+    const d=wrng(MAP_HALF*0.6,MAP_HALF*0.85);
+    mountainDefs.push({x:Math.cos(a)*d,z:Math.sin(a)*d,h:wrng(24,44),r:wrng(100,160)});
+  }
+  for(let i=0;i<5;i++){
+    mountainDefs.push({x:wrng(-MAP_HALF*0.5,MAP_HALF*0.5),z:wrng(-MAP_HALF*0.5,MAP_HALF*0.5),h:wrng(8,18),r:wrng(60,110)});
+  }
+  townDefs=[];
+  for(let i=0;i<8;i++){
+    const a=(i/8)*Math.PI*2+wrng(-0.4,0.4);
+    const d=wrng(80,MAP_HALF*0.72);
+    townDefs.push([Math.cos(a)*d,Math.sin(a)*d]);
+  }
+  flats=townDefs.map(t=>({x:t[0],z:t[1],r:52}));
+  flatH=flats.map(f=>rawH(f.x,f.z));
+  {
+    const SIZE=MAP_HALF*2+180,SEG=180;
+    const geo=new THREE.PlaneGeometry(SIZE,SIZE,SEG,SEG);
+    geo.rotateX(-Math.PI/2);
+    const pos=geo.attributes.position;
+    const colors=new Float32Array(pos.count*3);
+    const cGrass=new THREE.Color(0x6b8f4e),cDirt=new THREE.Color(0x8a7a55),cRock=new THREE.Color(0x84888c),cSnow=new THREE.Color(0xe6ebef);
+    const tmp=new THREE.Color();
+    for(let i=0;i<pos.count;i++){
+      const x=pos.getX(i),z=pos.getZ(i);
+      const h=terrainH(x,z);
+      pos.setY(i,h);
+      if(h<7) tmp.copy(cGrass).lerp(cDirt,Math.max(0,h-2)/5);
+      else if(h<22) tmp.copy(cDirt).lerp(cRock,(h-7)/15);
+      else if(h<40) tmp.copy(cRock).lerp(cSnow,(h-22)/18);
+      else tmp.copy(cSnow);
+      colors[i*3]=tmp.r*0.97;colors[i*3+1]=tmp.g*0.97;colors[i*3+2]=tmp.b*0.97;
+    }
+    geo.setAttribute('color',new THREE.BufferAttribute(colors,3));
+    geo.computeVertexNormals();
+    const ground=new THREE.Mesh(geo,new THREE.MeshLambertMaterial({vertexColors:true}));
+    ground.receiveShadow=true;
+    scene.add(ground);
+  }
+  townDefs.forEach(t=>{
+    const offs=[[-22,-22],[22,-22],[-22,22],[22,22],[0,0],[32,0],[0,32]];
+    for(let oi=offs.length-1;oi>0;oi--){const j=Math.floor(wrng(0,oi+1));const tmp2=offs[oi];offs[oi]=offs[j];offs[j]=tmp2;}
+    const n=4+Math.floor(wrng(0,3));
+    for(let i=0;i<n;i++){
+      const o=offs[i];
+      const r=wrng(0,1);
+      const floors=r<0.12?3:(r<0.45?2:1);
+      addHouse(t[0]+o[0]+wrng(-3,3),t[1]+o[1]+wrng(-3,3),wrng(9,13),wrng(9,14),floors);
+    }
+  });
+  for(let i=0;i<8;i++){
+    addHouse(wrng(-MAP_HALF+60,MAP_HALF-60),wrng(-MAP_HALF+60,MAP_HALF-60),wrng(12,16),wrng(14,20),wrng(0,1)<0.3?2:1);
+  }
+  // 나무/바위/풀숲
+  const trunkMat=new THREE.MeshLambertMaterial({color:0x6b4a2b});
+  const leafMat=new THREE.MeshLambertMaterial({color:0x3e6b2f});
+  const rockMat=new THREE.MeshLambertMaterial({color:0x8a8f94});
+  const bushMat=new THREE.MeshLambertMaterial({color:0x2f5726});
+  for(let i=0;i<120;i++){
+    const x=wrng(-MAP_HALF,MAP_HALF),z=wrng(-MAP_HALF,MAP_HALF);
+    const gy=terrainH(x,z);
+    const h=wrng(5,9),leafR=wrng(2.2,3.4),leafH=wrng(4,7);
+    if(gy>18||insideBld(x,z,1.5)) continue;
+    const trunk=new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.5,h,6),trunkMat);
+    trunk.position.set(x,gy+h/2,z);trunk.castShadow=true;scene.add(trunk);solids.push(trunk);
+    const leaf=new THREE.Mesh(new THREE.ConeGeometry(leafR,leafH,7),leafMat);
+    leaf.position.set(x,gy+h+2,z);leaf.castShadow=true;scene.add(leaf);
+    obstacles.push({x,z,hx:0.6,hz:0.6,y0:gy,y1:gy+h});
+  }
+  for(let i=0;i<60;i++){
+    const x=wrng(-MAP_HALF,MAP_HALF),z=wrng(-MAP_HALF,MAP_HALF);
+    const gy=terrainH(x,z);
+    const s=wrng(1.2,3.2),rx=wrng(0,3),ry2=wrng(0,3),rz=wrng(0,3);
+    if(insideBld(x,z,2)) continue;
+    const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(s,0),rockMat);
+    rock.position.set(x,gy+s*0.5,z);
+    rock.rotation.set(rx,ry2,rz);
+    rock.castShadow=true;scene.add(rock);solids.push(rock);
+    obstacles.push({x,z,hx:s*0.75,hz:s*0.75,y0:gy,y1:gy+s*1.4});
+  }
+  for(let i=0;i<80;i++){
+    const x=wrng(-MAP_HALF,MAP_HALF),z=wrng(-MAP_HALF,MAP_HALF);
+    const gy=terrainH(x,z);
+    const ss=[wrng(0.8,1.3),wrng(0.8,1.3),wrng(0.8,1.3)];
+    const po=[wrng(-0.8,0.8),wrng(-0.8,0.8),wrng(-0.8,0.8),wrng(-0.8,0.8),wrng(-0.8,0.8),wrng(-0.8,0.8)];
+    if(gy>18||insideBld(x,z,1.2)) continue;
+    const bg=new THREE.Group();
+    for(let j=0;j<3;j++){
+      const b=new THREE.Mesh(new THREE.IcosahedronGeometry(ss[j],0),bushMat);
+      b.position.set(po[j*2],ss[j]*0.45,po[j*2+1]);
+      b.scale.y=0.55;b.castShadow=true;
+      bg.add(b);
+    }
+    bg.position.set(x,gy,z);
+    scene.add(bg);
+  }
+  // 아이템 생성 (결정적 idx)
+  buildItems();
+  // 차량 스폰 위치 (결정적)
+  for(let i=0;i<8;i++){
+    const t=townDefs[i%townDefs.length];
+    carSpawns.push([t[0]+wrng(36,46),t[1]+wrng(-14,14),wrng(0,Math.PI*2)]);
+  }
+  for(let i=0;i<2;i++) carSpawns.push([wrng(-MAP_HALF*0.6,MAP_HALF*0.6),wrng(-MAP_HALF*0.6,MAP_HALF*0.6),wrng(0,Math.PI*2)]);
+  buildCars();
+  buildMinimapBg();
+  worldBuilt=true;
+}
+
+// ================= 아이템 =================
+const WEAPONS={
+  rifle:{name:'M416 돌격소총',auto:true,rpm:600,mag:30,reload:2.2,spread:0.012,adsSpread:0.004,recoil:0.011,range:340,scope:false,pellets:1},
+  shotgun:{name:'S686 산탄총',auto:false,rpm:75,mag:2,reload:2.6,spread:0.038,adsSpread:0.028,recoil:0.05,range:65,scope:false,pellets:8},
+  sniper:{name:'Kar98k (8배율)',auto:false,rpm:42,mag:5,reload:3.2,spread:0.02,adsSpread:0.0004,recoil:0.055,range:900,scope:true,pellets:1},
+};
+const WEAPON_KEYS=['rifle','shotgun','sniper'];
+const WNAME2IDX={'':0,rifle:1,shotgun:2,sniper:3};
+const WIDX2NAME=['','rifle','shotgun','sniper'];
+const ITEM_LABEL={rifle:'M416',shotgun:'S686',sniper:'Kar98k',ammo:'탄약',med:'구급상자',vest:'방탄조끼',drink:'에너지드링크',backpack:'가방',grenade:'수류탄',fuel:'기름통',crate:'보급상자',bandage:'붕대',helmet:'헬멧',medkit:'의료키트',smoke:'연막탄',airdrop:'보급 투하물'};
+const STACK={med:3,drink:3,grenade:3,ammo:180,fuel:2,bandage:5,medkit:1,smoke:3};
+const ITEM_POOL=['gun','gun','gun','gun','ammo','ammo','ammo','med','med','bandage','bandage','vest','helmet','drink','backpack','backpack','grenade','grenade','smoke','smoke','fuel','fuel','medkit'];
+function randItemTypeSeeded(){
+  const t=ITEM_POOL[Math.floor(wrng(0,ITEM_POOL.length))%ITEM_POOL.length];
+  if(t==='gun') return WEAPON_KEYS[Math.floor(wrng(0,3))%3];
+  return t;
+}
+const itemsByIdx=new Map(); // idx -> {mesh,type,x,z,gy,level}
+let takenSet=new Set();
+function gunItemMesh(color){
+  const m=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.12,0.8),new THREE.MeshLambertMaterial({color}));
+  m.add(body);
+  const barrel=new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.025,0.4,6),new THREE.MeshLambertMaterial({color:0x222}));
+  barrel.rotation.x=Math.PI/2;barrel.position.set(0,0.02,-0.55);m.add(barrel);
+  return m;
+}
+function spawnItemAt(idx,x,z,type,yBase,level){
+  if(takenSet.has(idx)) return;
+  let mesh,lvl=level||0;
+  if(type==='rifle') mesh=gunItemMesh(0x2f3338);
+  else if(type==='shotgun') mesh=gunItemMesh(0x5a3a28);
+  else if(type==='sniper') mesh=gunItemMesh(0x4c3a24);
+  else if(type==='ammo') mesh=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.4,0.4),new THREE.MeshLambertMaterial({color:0x9a7b3a}));
+  else if(type==='med'){
+    mesh=new THREE.Mesh(new THREE.BoxGeometry(0.45,0.35,0.45),new THREE.MeshLambertMaterial({color:0xdd4444}));
+  } else if(type==='vest'){
+    mesh=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.6,0.22),new THREE.MeshLambertMaterial({color:0x2a3d5a}));
+  } else if(type==='drink'){
+    mesh=new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.13,0.42,10),new THREE.MeshLambertMaterial({color:0x35b8d8}));
+  } else if(type==='backpack'){
+    if(!lvl) lvl=1+Math.floor(rng(0,3))%3;
+    const bpCol=[0xb08d57,0x5a6b3a,0x33384a][lvl-1];
+    const bpS=0.4+lvl*0.09;
+    mesh=new THREE.Mesh(new THREE.BoxGeometry(bpS,bpS*1.25,0.3),new THREE.MeshLambertMaterial({color:bpCol}));
+  } else if(type==='grenade'){
+    mesh=new THREE.Mesh(new THREE.SphereGeometry(0.15,10,10),new THREE.MeshLambertMaterial({color:0x3a4a3a}));
+  } else if(type==='smoke'){
+    mesh=new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.13,0.4,10),new THREE.MeshLambertMaterial({color:0x8a9096}));
+  } else if(type==='fuel'){
+    mesh=new THREE.Mesh(new THREE.BoxGeometry(0.42,0.52,0.26),new THREE.MeshLambertMaterial({color:0xc23b2e}));
+  } else if(type==='bandage'){
+    mesh=new THREE.Mesh(new THREE.BoxGeometry(0.32,0.18,0.32),new THREE.MeshLambertMaterial({color:0xf0ead8}));
+  } else if(type==='helmet'){
+    mesh=new THREE.Mesh(new THREE.SphereGeometry(0.26,12,8,0,Math.PI*2,0,Math.PI/2),new THREE.MeshLambertMaterial({color:0x4a5a3a}));
+  } else if(type==='medkit'){
+    mesh=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.4,0.5),new THREE.MeshLambertMaterial({color:0xf0f0f0}));
+  } else if(type==='airdrop'){
+    mesh=new THREE.Mesh(new THREE.BoxGeometry(1.1,0.8,1.1),new THREE.MeshLambertMaterial({color:0xc23b2e}));
+    const beam=new THREE.Mesh(new THREE.CylinderGeometry(0.14,0.32,9,8,1,true),new THREE.MeshBasicMaterial({color:0xff5a3d,transparent:true,opacity:0.3,side:THREE.DoubleSide,depthWrite:false}));
+    beam.position.y=4.6;mesh.add(beam);
+  } else { // crate
+    mesh=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.55,0.9),new THREE.MeshLambertMaterial({color:0x7a5c2e}));
+    const beam=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.28,7,8,1,true),new THREE.MeshBasicMaterial({color:0xffd76a,transparent:true,opacity:0.25,side:THREE.DoubleSide,depthWrite:false}));
+    beam.position.y=3.6;mesh.add(beam);
+  }
+  const gy=(yBase!==undefined&&yBase!==null)?yBase:terrainH(x,z);
+  mesh.position.set(x,gy+0.35,z);
+  mesh.traverse(o=>{o.castShadow=true;});
+  scene.add(mesh);
+  itemsByIdx.set(idx,{mesh,type,x,z,gy,level:lvl});
+}
+function removeItemIdx(idx){
+  const it=itemsByIdx.get(idx);
+  if(!it) return;
+  scene.remove(it.mesh);
+  itemsByIdx.delete(idx);
+}
+function buildItems(){
+  let idx=0;
+  for(const a of itemSpawnQueue){
+    spawnItemAt(idx++,a[0],a[1],randItemTypeSeeded(),a[2]);
+  }
+  for(let i=0;i<60;i++){
+    const x=wrng(-MAP_HALF+15,MAP_HALF-15),z=wrng(-MAP_HALF+15,MAP_HALF-15);
+    spawnItemAt(idx++,x,z,randItemTypeSeeded());
+  }
+}
+function itemLabel(it){
+  if(it.type==='backpack') return '가방 Lv'+(it.level||1)+' ('+(2+(it.level||1)*2)+'칸)';
+  return ITEM_LABEL[it.type];
+}
+
+// ================= 인벤토리 =================
+let inventory=[],heldWeapon=null,bagLevel=0,hasHelmet=false,armorLocal=0;
+function capacity(){return 2+bagLevel*2;}
+function sumAmmo(){let s=0;for(const sl of inventory)if(sl.type==='ammo')s+=sl.count;return s;}
+function takeAmmo(n){
+  let need=n;
+  for(let i=inventory.length-1;i>=0&&need>0;i--){
+    const sl=inventory[i];
+    if(sl.type!=='ammo')continue;
+    const take=Math.min(sl.count,need);
+    sl.count-=take;need-=take;
+    if(sl.count<=0)inventory.splice(i,1);
+  }
+  renderInv();
+  return n-need;
+}
+function sendGear(){
+  if(ws&&ws.readyState===1) ws.send(JSON.stringify({t:'gear',armor:armorLocal,helmet:hasHelmet,bag:bagLevel}));
+}
+function addToInventory(type){
+  if(type==='helmet'||type==='vest'||type==='backpack') return false;
+  if(WEAPONS[type]){
+    if(inventory.length>=capacity()) return false;
+    const slot={type:'weapon',wtype:type,ammo:WEAPONS[type].mag};
+    inventory.push(slot);
+    if(!heldWeapon) equip(slot);
+    renderInv();
+    return true;
+  }
+  if(type==='ammo'){
+    for(const sl of inventory){if(sl.type==='ammo'&&sl.count<STACK.ammo){sl.count=Math.min(STACK.ammo,sl.count+60);renderInv();return true;}}
+    if(inventory.length>=capacity()) return false;
+    inventory.push({type:'ammo',count:60});renderInv();return true;
+  }
+  for(const sl of inventory){if(sl.type===type&&sl.count<STACK[type]){sl.count++;renderInv();return true;}}
+  if(inventory.length>=capacity()) return false;
+  inventory.push({type,count:1});renderInv();return true;
+}
+function equip(slot){
+  heldWeapon=slot;
+  buildGun(slot?slot.wtype:null);
+  updateHUD();renderInv();
+}
+function consume(sl){
+  sl.count--;
+  if(sl.count<=0){const i=inventory.indexOf(sl);if(i>=0)inventory.splice(i,1);}
+  renderInv();
+}
+function useSlot(idx){
+  const sl=inventory[idx];
+  if(!sl)return;
+  if(sl.type==='weapon'){if(reloading<=0)equip(sl);return;}
+  if(sl.type==='ammo'){announce('탄약 '+sl.count+'발 — 재장전(R)에 사용');return;}
+  if(sl.type==='med'){
+    if(player.hp>=100){announce('체력이 가득 찼습니다');return;}
+    sendHeal(50);consume(sl);announce('구급상자 사용 (+50)');
+  } else if(sl.type==='bandage'){
+    if(player.hp>=100){announce('체력이 가득 찼습니다');return;}
+    sendHeal(15);consume(sl);announce('붕대 사용 (+15)');
+  } else if(sl.type==='medkit'){
+    sendHeal(100);consume(sl);announce('의료키트 — 완전 회복');
+  } else if(sl.type==='drink'){
+    sendHeal(25);player.boostT=20;consume(sl);announce('에너지드링크 (+25 · 20초 부스트)');
+  } else if(sl.type==='smoke'){
+    if(driving){announce('운전 중에는 던질 수 없습니다');return;}
+    consume(sl);
+    throwNadeLocal('smoke',0.55);
+  } else if(sl.type==='grenade'){
+    announce('수류탄은 G키를 길게 눌러 투척합니다');
+  } else if(sl.type==='fuel'){
+    let car=driving;
+    if(!car) car=nearestCar(3.6);
+    if(!car){announce('차량 근처에서 사용할 수 있습니다');return;}
+    if(car.dead){announce('파괴된 차량입니다');return;}
+    car.fuel=Math.min(100,car.fuel+50);
+    consume(sl);announce('연료 +50 (⛽ '+Math.round(car.fuel)+')');
+  }
+  updateHUD();
+}
+function dropSlot(i){
+  const sl=inventory[i];
+  if(!sl||!ws||ws.readyState!==1)return;
+  const fx=player.pos.x-Math.sin(player.yaw)*1.7+rng(-0.4,0.4);
+  const fz=player.pos.z-Math.cos(player.yaw)*1.7+rng(-0.4,0.4);
+  if(sl.type==='weapon'){
+    ws.send(JSON.stringify({t:'drop',type:sl.wtype,x:fx,z:fz}));
+    inventory.splice(i,1);
+    announce(ITEM_LABEL[sl.wtype]+' 버림');
+    if(heldWeapon===sl){
+      heldWeapon=null;buildGun(null);
+      const alt=inventory.find(s=>s.type==='weapon');
+      if(alt)equip(alt);
+    }
+  } else if(sl.type==='ammo'){
+    const amt=Math.min(60,sl.count);
+    sl.count-=amt;
+    ws.send(JSON.stringify({t:'drop',type:'ammo',x:fx,z:fz}));
+    if(sl.count<=0){const j=inventory.indexOf(sl);if(j>=0)inventory.splice(j,1);}
+    announce('탄약 버림');
+  } else {
+    sl.count--;
+    ws.send(JSON.stringify({t:'drop',type:sl.type,x:fx,z:fz}));
+    if(sl.count<=0){const j=inventory.indexOf(sl);if(j>=0)inventory.splice(j,1);}
+    announce(ITEM_LABEL[sl.type]+' 버림');
+  }
+  renderInv();updateHUD();
+}
+function renderInv(){
+  const bar=document.getElementById('invbar');
+  bar.innerHTML='';
+  const cap=capacity();
+  for(let i=0;i<cap;i++){
+    const div=document.createElement('div');
+    const sl=inventory[i];
+    if(sl){
+      div.className='slot'+(sl===heldWeapon?' sel':'');
+      const label=sl.type==='weapon'?ITEM_LABEL[sl.wtype]:ITEM_LABEL[sl.type];
+      const cnt=sl.type==='weapon'?'':' <span class="cnt">x'+sl.count+'</span>';
+      div.innerHTML='<span class="num">'+(i+1)+'</span><span>'+label+cnt+'</span>';
+    } else {
+      div.className='slot empty';
+      div.innerHTML='<span class="num">'+(i+1)+'</span><span>빈 칸</span>';
+    }
+    bar.appendChild(div);
+  }
+}
+
+// ================= 플레이어 / 모델 =================
+const player={pos:new THREE.Vector3(0,3,0),velY:0,yaw:0,pitch:0,hp:100,stance:'stand',onGround:true,dead:false,kills:0,eyeCur:1.7,boostT:0};
+const EYE_STAND=1.7,EYE_PRONE=0.55;
+let viewMode='fps';
+const gunGroup=new THREE.Group();
+function buildGun(type){
+  while(gunGroup.children.length)gunGroup.remove(gunGroup.children[0]);
+  if(!type)return;
+  const dark=new THREE.MeshLambertMaterial({color:0x222426});
+  const wood=new THREE.MeshLambertMaterial({color:0x5a4632});
+  if(type==='rifle'){
+    const body=new THREE.Mesh(new THREE.BoxGeometry(0.09,0.12,0.75),dark);body.position.set(0,0,-0.25);gunGroup.add(body);
+    const barrel=new THREE.Mesh(new THREE.CylinderGeometry(0.022,0.022,0.5,8),dark);barrel.rotation.x=Math.PI/2;barrel.position.set(0,0.02,-0.8);gunGroup.add(barrel);
+    const mag=new THREE.Mesh(new THREE.BoxGeometry(0.07,0.22,0.12),dark);mag.position.set(0,-0.15,-0.18);mag.rotation.x=0.25;gunGroup.add(mag);
+  } else if(type==='shotgun'){
+    const body=new THREE.Mesh(new THREE.BoxGeometry(0.09,0.11,0.85),wood);body.position.set(0,0,-0.3);gunGroup.add(body);
+    const b1=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.6,8),dark);b1.rotation.x=Math.PI/2;b1.position.set(-0.035,0.03,-0.9);gunGroup.add(b1);
+    const b2=b1.clone();b2.position.x=0.035;gunGroup.add(b2);
+  } else if(type==='sniper'){
+    const body=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.1,1.0),wood);body.position.set(0,0,-0.3);gunGroup.add(body);
+    const barrel=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.7,8),dark);barrel.rotation.x=Math.PI/2;barrel.position.set(0,0.03,-1.0);gunGroup.add(barrel);
+    const scope=new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.035,0.26,8),new THREE.MeshLambertMaterial({color:0x111}));scope.rotation.x=Math.PI/2;scope.position.set(0,0.1,-0.35);gunGroup.add(scope);
+  }
+}
+camera.add(gunGroup);
+scene.add(camera);
+const flash=new THREE.PointLight(0xffcc66,0,8);flash.position.set(0,0,-1);camera.add(flash);
+const tpsRay=new THREE.Raycaster();
+
+function makeCharModel(color){
+  const g=new THREE.Group();
+  const bodyM=new THREE.MeshLambertMaterial({color});
+  const torso=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.75,0.32),bodyM);torso.position.y=1.1;torso.userData.part='body';
+  const head=new THREE.Mesh(new THREE.SphereGeometry(0.19,10,10),new THREE.MeshLambertMaterial({color:0xd9b38c}));head.position.y=1.68;head.userData.part='head';
+  const legs=new THREE.Mesh(new THREE.BoxGeometry(0.45,0.75,0.28),new THREE.MeshLambertMaterial({color:0x39424e}));legs.position.y=0.37;legs.userData.part='body';
+  const armL=new THREE.Mesh(new THREE.BoxGeometry(0.14,0.6,0.14),bodyM);armL.position.set(-0.37,1.12,0);armL.userData.part='body';
+  const armR=armL.clone();armR.position.x=0.37;
+  const helmet=new THREE.Mesh(new THREE.SphereGeometry(0.215,10,8,0,Math.PI*2,0,Math.PI/2),new THREE.MeshLambertMaterial({color:0x4a5a3a}));helmet.position.y=1.7;helmet.visible=false;helmet.userData.part='head';
+  const vest=new THREE.Mesh(new THREE.BoxGeometry(0.62,0.5,0.4),new THREE.MeshLambertMaterial({color:0x2a3d5a}));vest.position.y=1.15;vest.visible=false;vest.userData.part='body';
+  const bag=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.6,0.28),new THREE.MeshLambertMaterial({color:0xb08d57}));bag.position.set(0,1.15,0.36);bag.visible=false;bag.userData.part='body';
+  const gun=new THREE.Mesh(new THREE.BoxGeometry(0.07,0.09,0.75),new THREE.MeshLambertMaterial({color:0x222426}));gun.position.set(0.3,1.15,-0.35);gun.visible=false;gun.userData.part='body';
+  g.add(torso,head,legs,armL,armR,helmet,vest,bag,gun);
+  g.userData.eq={helmet,vest,bag,gun};
+  g.traverse(o=>{o.castShadow=true;});
+  return g;
+}
+function applyGearToModel(g,helmet,armor,bag,wIdx){
+  const eq=g.userData.eq;
+  eq.helmet.visible=!!helmet;
+  eq.vest.visible=armor>0;
+  eq.bag.visible=bag>0;
+  if(bag>0){
+    const s=0.8+bag*0.18;
+    eq.bag.scale.set(s,s,1);
+    eq.bag.material.color.setHex([0xb08d57,0x5a6b3a,0x33384a][bag-1]);
+  }
+  eq.gun.visible=wIdx>0;
+  if(wIdx>0){
+    const L=wIdx===3?1.0:(wIdx===2?0.85:0.7);
+    eq.gun.scale.z=L/0.75;
+  }
+}
+const playerModel=makeCharModel(0x7a6a4a);
+playerModel.visible=false;
+scene.add(playerModel);
+
+// ================= 원격 플레이어 =================
+const remotes=new Map();
+function makeNameTag(name){
+  const cv=document.createElement('canvas');
+  cv.width=256;cv.height=64;
+  const c=cv.getContext('2d');
+  c.font='bold 30px sans-serif';c.textAlign='center';
+  c.fillStyle='rgba(0,0,0,0.45)';c.fillRect(0,8,256,48);
+  c.fillStyle='#fff';c.fillText(name,128,42);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv),depthTest:false}));
+  sp.scale.set(2.4,0.6,1);sp.position.y=2.25;
+  return sp;
+}
+function addRemote(id,name,x,y,z){
+  if(remotes.has(id))return remotes.get(id);
+  const colors=[0xc27f5a,0x8a6b52,0x5a6b8a,0x6b8a5a,0x8a5a6b];
+  const group=makeCharModel(colors[id%colors.length]);
+  group.userData.rid=id;
+  group.position.set(x||0,(y||3)-EYE_STAND,z||0);
+  const tag=makeNameTag(name||('플레이어'+id));
+  group.add(tag);
+  scene.add(group);
+  const r={id,name:name||('플레이어'+id),group,tag,buf:[],hp:100,alive:true,stance:'stand',helmet:0,bag:0,wIdx:0,armor:0};
+  remotes.set(id,r);
+  return r;
+}
+function renameRemote(id,name){
+  const r=remotes.get(id);if(!r)return;
+  r.name=name;r.group.remove(r.tag);r.tag=makeNameTag(name);r.group.add(r.tag);
+}
+function removeRemote(id){
+  const r=remotes.get(id);if(!r)return;
+  scene.remove(r.group);remotes.delete(id);
+}
+function updateRemotes(){
+  const renderT=performance.now()-120;
+  for(const r of remotes.values()){
+    const inCar=carsByDriver.get(r.id);
+    r.group.visible=r.alive&&!inCar;
+    if(!r.group.visible)continue;
+    const b=r.buf;
+    while(b.length>2&&b[1].tt<renderT)b.shift();
+    if(b.length===0)continue;
+    let x,y,z,yaw;
+    if(b.length===1||b[0].tt>=renderT){({x,y,z,yaw}=b[0]);}
+    else{
+      const a=b[0],c=b[1];
+      const k=clamp((renderT-a.tt)/Math.max(1,c.tt-a.tt),0,1);
+      x=a.x+(c.x-a.x)*k;y=a.y+(c.y-a.y)*k;z=a.z+(c.z-a.z)*k;
+      let dy=c.yaw-a.yaw;
+      while(dy>Math.PI)dy-=Math.PI*2;
+      while(dy<-Math.PI)dy+=Math.PI*2;
+      yaw=a.yaw+dy*k;
+    }
+    const crawl=r.hp>0&&r.hp<20;
+    const eyeOff=(r.stance==='prone'||crawl)?EYE_PRONE:EYE_STAND;
+    r.group.position.set(x,y-eyeOff,z);
+    r.group.rotation.y=yaw;
+    r.group.scale.y=(r.stance==='prone'||crawl)?0.5:1;
+    applyGearToModel(r.group,r.helmet,r.armor,r.bag,r.wIdx);
+  }
+}
+
+// ================= 차량 =================
+const cars=[];
+const carsByDriver=new Map(); // driverId -> car
+let driving=null;
+const carColors=[0xc9a34a,0x5a7a9a,0x9a5a5a,0x5a9a6a,0x9a9a9a];
+const wreckMat=new THREE.MeshLambertMaterial({color:0x1c1c1c});
+function makeCarMesh(x,z,heading,idx){
+  const g=new THREE.Group();
+  g.rotation.order='YXZ';
+  const bodyMat=new THREE.MeshLambertMaterial({color:carColors[idx%carColors.length]});
+  const darkMat=new THREE.MeshLambertMaterial({color:0x1d1f22});
+  const body=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.72,4.2),bodyMat);
+  body.position.y=0.95;body.castShadow=true;g.add(body);
+  const cabin=new THREE.Mesh(new THREE.BoxGeometry(1.72,0.65,2.0),bodyMat);
+  cabin.position.set(0,1.6,-0.2);cabin.castShadow=true;g.add(cabin);
+  const wheels=[];
+  const wGeo=new THREE.CylinderGeometry(0.42,0.42,0.3,12);
+  [[-0.95,1.35],[0.95,1.35],[-0.95,-1.35],[0.95,-1.35]].forEach(p=>{
+    const w=new THREE.Mesh(wGeo,darkMat);
+    w.rotation.z=Math.PI/2;w.position.set(p[0],0.42,p[1]);
+    w.castShadow=true;g.add(w);wheels.push(w);
+  });
+  const headMark=new THREE.Mesh(new THREE.SphereGeometry(0.17,8,8),new THREE.MeshLambertMaterial({color:0xd9b38c}));
+  headMark.position.set(-0.45,2.15,0.3);headMark.visible=false;g.add(headMark);
+  g.position.set(x,terrainH(x,z),z);
+  scene.add(g);
+  const car={idx,mesh:g,body,cabin,wheels,headMark,speed:0,heading,hp:500,fuel:45,dead:false,drv:0,tx:x,tz:z,th:heading};
+  body.userData.carRef=car;cabin.userData.carRef=car;
+  solids.push(body);
+  cars.push(car);
+  updateCarPose(car);
+  return car;
+}
+function buildCars(){ carSpawns.forEach((s,i)=>makeCarMesh(s[0],s[1],s[2],i)); }
+function updateCarPose(car){
+  const x=car.mesh.position.x,z=car.mesh.position.z;
+  const fdx=Math.sin(car.heading),fdz=Math.cos(car.heading);
+  const rdx=fdz,rdz=-fdx;
+  const L=1.6,W=0.95;
+  const hHere=terrainH(x,z);
+  const hF=terrainH(x+fdx*L,z+fdz*L),hB=terrainH(x-fdx*L,z-fdz*L);
+  const hL=terrainH(x+rdx*W,z+rdz*W),hR=terrainH(x-rdx*W,z-rdz*W);
+  car.mesh.position.y=Math.max((hF+hB+hL+hR)/4,hHere)+0.06;
+  car.mesh.rotation.y=car.heading;
+  car.mesh.rotation.x=clamp(Math.atan2(hB-hF,2*L),-0.45,0.45);
+  car.mesh.rotation.z=clamp(Math.atan2(hL-hR,2*W),-0.45,0.45);
+  car.headMark.visible=car.drv>0&&!car.dead;
+  car.headMark.material.color.setHex(car.drv===myId?0xffd76a:0xd9b38c);
+}
+function nearestCar(maxD){
+  let best=null,bd=maxD||3.8;
+  for(const c of cars){
+    if(c.dead||c.drv)continue;
+    const d=Math.hypot(c.mesh.position.x-player.pos.x,c.mesh.position.z-player.pos.z);
+    if(d<bd){bd=d;best=c;}
+  }
+  return best;
+}
+function wreckCar(car){
+  car.dead=true;car.hp=0;car.speed=0;car.drv=0;
+  car.mesh.traverse(o=>{if(o.isMesh)o.material=wreckMat;});
+  boomFX(car.mesh.position.clone().add(new THREE.Vector3(0,1,0)),8);
+  playBoom(0.5);
+  if(driving===car){
+    exitCarLocal(false);
+    announce('🔥 차량 폭발! 긴급 탈출 — 체력 절반 감소');
+  }
+}
+function enterCarLocal(car){
+  driving=car;ads=false;
+  car.cabin.visible=(viewMode==='tps');
+  if(player.stance==='prone'){player.stance='stand';document.getElementById('stance').style.display='none';}
+  engineStart();
+  document.getElementById('speedo').style.display='block';
+  announce('차량 탑승');
+}
+function exitCarLocal(sendMsg){
+  const c=driving;
+  if(!c)return;
+  c.cabin.visible=true;
+  if(sendMsg&&ws&&ws.readyState===1)ws.send(JSON.stringify({t:'carexit',idx:c.idx}));
+  const exitSpd=Math.abs(c.speed);
+  const rx=Math.cos(c.heading),rz=-Math.sin(c.heading);
+  let ex=c.mesh.position.x-rx*2.4,ez=c.mesh.position.z-rz*2.4;
+  if(collideEnt(ex,ez,0.4,terrainH(ex,ez))){ex=c.mesh.position.x+rx*2.4;ez=c.mesh.position.z+rz*2.4;}
+  player.pos.set(ex,terrainH(ex,ez)+EYE_STAND,ez);
+  c.drv=0;driving=null;
+  engineStop();
+  document.getElementById('speedo').style.display='none';
+  if(sendMsg&&exitSpd>8&&ws&&ws.readyState===1){
+    ws.send(JSON.stringify({t:'selfdmg',amt:Math.min(55,(exitSpd-6)*2.2),cause:'고속 하차'}));
+    announce('고속 하차 — 구르며 피해!');
+  }
+}
+function updateDriving(dt){
+  const c=driving;
+  const MAXF=c.hp<100?12:26,MAXR=-9,ACC=13,BRK=22,FRIC=4;
+  const hasFuel=c.fuel>0;
+  if(keys['KeyW']&&hasFuel)c.speed+=ACC*dt;
+  else if(keys['KeyS'])c.speed-=(c.speed>0?BRK:(hasFuel?ACC:0))*dt;
+  else{
+    if(c.speed>0)c.speed=Math.max(0,c.speed-FRIC*dt);
+    else c.speed=Math.min(0,c.speed+FRIC*dt);
+  }
+  c.speed=clamp(c.speed,MAXR,MAXF);
+  const steer=(keys['KeyA']?1:0)-(keys['KeyD']?1:0);
+  if(Math.abs(c.speed)>0.5)c.heading+=steer*dt*1.9*Math.min(1,Math.abs(c.speed)/10)*Math.sign(c.speed);
+  if(Math.abs(c.speed)>0.3&&hasFuel){
+    c.fuel-=Math.abs(c.speed)*dt*0.055;
+    if(c.fuel<=0){c.fuel=0;announce('⛽ 연료가 떨어졌습니다!');}
+  }
+  const fdx=Math.sin(c.heading),fdz=Math.cos(c.heading);
+  let nx=c.mesh.position.x+fdx*c.speed*dt,nz=c.mesh.position.z+fdz*c.speed*dt;
+  nx=clamp(nx,-MAP_HALF,MAP_HALF);nz=clamp(nz,-MAP_HALF,MAP_HALF);
+  if(collideEnt(nx,nz,1.5,c.mesh.position.y)){
+    if(Math.abs(c.speed)>12&&ws&&ws.readyState===1){
+      ws.send(JSON.stringify({t:'selfdmg',amt:Math.abs(c.speed)*0.7,cause:'교통사고'}));
+      ws.send(JSON.stringify({t:'cardmg',idx:c.idx,dmg:Math.abs(c.speed)*1.4}));
+    }
+    c.speed*=-0.25;
+  } else {
+    c.mesh.position.x=nx;c.mesh.position.z=nz;
+  }
+  updateCarPose(c);
+  c.wheels.forEach(w=>{w.rotation.x+=c.speed*dt*2.4;});
+  // 로드킬
+  if(Math.abs(c.speed)>4.5){
+    for(const r of remotes.values()){
+      if(!r.alive||carsByDriver.get(r.id))continue;
+      if(Math.hypot(r.group.position.x-nx,r.group.position.z-nz)<2.4){
+        if(ws&&ws.readyState===1)ws.send(JSON.stringify({t:'hit',target:r.id,w:'car',head:false}));
+        c.speed*=0.7;
+      }
+    }
+  }
+  engineUpdate(hasFuel?c.speed:0);
+  document.getElementById('kmh').textContent=Math.round(Math.abs(c.speed)*3.6);
+  document.getElementById('fuelval').textContent=Math.round(c.fuel);
+  document.getElementById('carhpval').textContent=Math.round(c.hp);
+  const seat=new THREE.Vector3(-0.4,1.85,0.1);
+  const sx=c.mesh.position.x+seat.x*Math.cos(c.heading)+seat.z*Math.sin(c.heading);
+  const sz=c.mesh.position.z-seat.x*Math.sin(c.heading)+seat.z*Math.cos(c.heading);
+  const hF2=terrainH(c.mesh.position.x+fdx*2,c.mesh.position.z+fdz*2);
+  player.pos.set(sx,Math.max(c.mesh.position.y,hF2)+seat.y,sz);
+  camera.rotation.set(0,0,0);
+  camera.rotateY(player.yaw);
+  camera.rotateX(player.pitch);
+  if(viewMode==='tps'){
+    const vdir=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+    const ax=c.mesh.position.x,ay=c.mesh.position.y+2.0,az=c.mesh.position.z;
+    let camDist=7.5;
+    tpsRay.set(new THREE.Vector3(ax,ay,az),vdir.clone().multiplyScalar(-1));
+    tpsRay.far=camDist;
+    const hh=tpsRay.intersectObjects(solids,false);
+    if(hh.length>0)camDist=Math.max(1.5,hh[0].distance-0.4);
+    let cpx=ax-vdir.x*camDist,cpy=ay-vdir.y*camDist+0.6,cpz=az-vdir.z*camDist;
+    const tg2=terrainH(cpx,cpz)+0.4;
+    if(cpy<tg2)cpy=tg2;
+    camera.position.set(cpx,cpy,cpz);
+  } else camera.position.copy(player.pos);
+  applyFov(dt);
+}
+function updateRemoteCars(dt){
+  for(const c of cars){
+    if(c===driving||c.dead)continue;
+    {
+      const k=Math.min(1,dt*8);
+      c.mesh.position.x+=(c.tx-c.mesh.position.x)*k;
+      c.mesh.position.z+=(c.tz-c.mesh.position.z)*k;
+      let dh=c.th-c.heading;
+      while(dh>Math.PI)dh-=Math.PI*2;
+      while(dh<-Math.PI)dh+=Math.PI*2;
+      c.heading+=dh*k;
+      updateCarPose(c);
+    }
+  }
+}
+let engOsc=null,engGain=null;
+function engineStart(){
+  try{
+    const ctx=audio();
+    engOsc=ctx.createOscillator();engOsc.type='sawtooth';engOsc.frequency.value=55;
+    engGain=ctx.createGain();engGain.gain.value=soundOn?0.035:0;
+    const f=ctx.createBiquadFilter();f.type='lowpass';f.frequency.value=420;
+    engOsc.connect(f).connect(engGain).connect(ctx.destination);
+    engOsc.start();
+  }catch(e){}
+}
+function engineStop(){try{if(engOsc){engOsc.stop();engOsc=null;}}catch(e){}}
+function engineUpdate(speed){try{if(engOsc)engOsc.frequency.value=55+Math.abs(speed)*6.5;}catch(e){}}
+
+// ================= 이펙트 / 수류탄 / 연막 =================
+const effects=[],tracers=[],grenades=[],smokes=[];
+function boomFX(pos,radius){
+  const m=new THREE.Mesh(new THREE.SphereGeometry(1,14,14),new THREE.MeshBasicMaterial({color:0xff9a3d,transparent:true,opacity:0.85,depthWrite:false}));
+  m.position.copy(pos);scene.add(m);
+  effects.push({mesh:m,t:0,dur:0.5,maxScale:radius});
+}
+function spawnSmoke(pos){
+  const g=new THREE.Group();const mats=[];
+  for(let i=0;i<9;i++){
+    const m=new THREE.Mesh(new THREE.SphereGeometry(rng(1.6,2.6),10,10),new THREE.MeshLambertMaterial({color:0x9aa0a6,transparent:true,opacity:0,depthWrite:false}));
+    m.position.set(rng(-2.2,2.2),rng(0.4,2.6),rng(-2.2,2.2));
+    g.add(m);mats.push(m.material);
+  }
+  g.position.copy(pos);scene.add(g);
+  smokes.push({mesh:g,mats,t:0,dur:13});
+}
+function updateSmokes(dt){
+  for(let i=smokes.length-1;i>=0;i--){
+    const s=smokes[i];s.t+=dt;
+    let o;
+    if(s.t<1.2)o=0.55*(s.t/1.2);
+    else if(s.t>s.dur-2.5)o=0.55*Math.max(0,(s.dur-s.t)/2.5);
+    else o=0.55;
+    s.mesh.scale.setScalar(Math.min(1,0.3+s.t/1.2*0.7));
+    for(const m of s.mats)m.opacity=o;
+    if(s.t>=s.dur){scene.remove(s.mesh);smokes.splice(i,1);}
+  }
+}
+function nadeVel(power){
+  const dir=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+  return dir.multiplyScalar(8+16*power).add(new THREE.Vector3(0,2.5+2.5*power,0));
+}
+function throwNadeLocal(kind,power){
+  const o=player.pos.clone().add(new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).multiplyScalar(0.6));
+  const v=kind==='smoke'
+    ? new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).multiplyScalar(14).add(new THREE.Vector3(0,3.5,0))
+    : nadeVel(power);
+  spawnNade(kind,o,v,true);
+  if(ws&&ws.readyState===1)ws.send(JSON.stringify({t:'nade',kind,o:[+o.x.toFixed(1),+o.y.toFixed(1),+o.z.toFixed(1)],v:[+v.x.toFixed(2),+v.y.toFixed(2),+v.z.toFixed(2)]}));
+}
+function spawnNade(kind,o,v,mine){
+  const mesh=new THREE.Mesh(new THREE.SphereGeometry(0.11,8,8),new THREE.MeshLambertMaterial({color:kind==='smoke'?0x8a9096:0x3a4a3a}));
+  mesh.position.copy(o);mesh.castShadow=true;scene.add(mesh);
+  grenades.push({mesh,vel:v.clone(),t:kind==='smoke'?1.6:2.6,kind,mine});
+}
+function updateGrenades(dt){
+  for(let i=grenades.length-1;i>=0;i--){
+    const gr=grenades[i];
+    gr.t-=dt;
+    gr.vel.y-=18*dt;
+    const nx=gr.mesh.position.x+gr.vel.x*dt;
+    const ny=gr.mesh.position.y+gr.vel.y*dt;
+    const nz=gr.mesh.position.z+gr.vel.z*dt;
+    const gy=terrainH(nx,nz);
+    if(collideEnt(nx,nz,0.12,gr.mesh.position.y-0.1)){gr.vel.x*=-0.35;gr.vel.z*=-0.35;}
+    else{gr.mesh.position.x=nx;gr.mesh.position.z=nz;}
+    if(ny<gy+0.11){gr.mesh.position.y=gy+0.11;gr.vel.y*=-0.38;gr.vel.x*=0.6;gr.vel.z*=0.6;}
+    else gr.mesh.position.y=ny;
+    if(gr.t<=0){
+      const pos=gr.mesh.position.clone();
+      scene.remove(gr.mesh);grenades.splice(i,1);
+      if(gr.kind==='smoke'){spawnSmoke(pos);playNoise(0.15,0.35,600);}
+      else{
+        boomFX(pos,9);playBoom(0.5);
+        if(gr.mine&&ws&&ws.readyState===1){
+          // 내가 던진 수류탄만 피해 판정 (거리 감쇠)
+          for(const r of remotes.values()){
+            if(!r.alive)continue;
+            const d=Math.sqrt((r.group.position.x-pos.x)**2+(r.group.position.y+1-pos.y)**2+(r.group.position.z-pos.z)**2);
+            if(d<11)ws.send(JSON.stringify({t:'hit',target:r.id,w:'nade',dmg:110*(1-d/11)+12,head:false}));
+          }
+          if(!player.dead&&!driving){
+            const d=player.pos.distanceTo(pos);
+            if(d<11)ws.send(JSON.stringify({t:'selfdmg',amt:110*(1-d/11)+10,cause:'수류탄'}));
+          }
+          for(const c of cars){
+            if(c.dead)continue;
+            const d=Math.hypot(c.mesh.position.x-pos.x,c.mesh.position.z-pos.z);
+            if(d<11)ws.send(JSON.stringify({t:'cardmg',idx:c.idx,dmg:60*(1-d/11)+10}));
+          }
+        }
+      }
+    }
+  }
+}
+// 수류탄 차징
+let nadeCharge=-1;
+const trajGeo=new THREE.BufferGeometry();
+const trajLine=new THREE.Line(trajGeo,new THREE.LineBasicMaterial({color:0xffe9a3,transparent:true,opacity:0.85}));
+trajLine.visible=false;trajLine.frustumCulled=false;scene.add(trajLine);
+const landMark=new THREE.Mesh(new THREE.RingGeometry(0.5,0.75,24),new THREE.MeshBasicMaterial({color:0xff9a3d,transparent:true,opacity:0.9,side:THREE.DoubleSide,depthWrite:false}));
+landMark.rotation.x=-Math.PI/2;landMark.visible=false;scene.add(landMark);
+function simThrow(power){
+  const pos=player.pos.clone().add(new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).multiplyScalar(0.6));
+  const vel=nadeVel(power);
+  const pts=[pos.clone()];
+  for(let i=0;i<140;i++){
+    vel.y-=18*0.045;
+    pos.addScaledVector(vel,0.045);
+    pts.push(pos.clone());
+    if(pos.y<=terrainH(pos.x,pos.z)+0.1)break;
+  }
+  return pts;
+}
+function updateNadeCharge(dt){
+  if(nadeCharge<0)return;
+  if(!inventory.some(s=>s.type==='grenade')||driving){cancelNade();return;}
+  nadeCharge=Math.min(1,nadeCharge+dt/1.2);
+  const pts=simThrow(nadeCharge);
+  trajGeo.setFromPoints(pts);
+  trajLine.visible=true;
+  const lp=pts[pts.length-1];
+  landMark.position.set(lp.x,terrainH(lp.x,lp.z)+0.12,lp.z);
+  landMark.visible=true;
+}
+function cancelNade(){nadeCharge=-1;trajLine.visible=false;landMark.visible=false;}
+
+// ================= 네트워크 =================
+let ws=null,myId=0,myName='';
+let netReady=false;
+const zoneS={cx:0,cz:0,r:MAP_HALF,ncx:0,ncz:0,nr:0,shrinking:false,timer:0,phase:0};
+const airdropsFalling=[];
+const redzone={active:false,x:0,z:0,r:70,t:0,boomT:0};
+function sendHeal(amt){if(ws&&ws.readyState===1)ws.send(JSON.stringify({t:'heal',amt}));}
+function connect(){
+  const url=location.origin.replace(/^http/,'ws');
+  document.getElementById('connstatus').textContent='서버 접속 중...';
+  ws=new WebSocket(url);
+  ws.onopen=()=>{
+    document.getElementById('connstatus').textContent='접속 완료! 전장 진입을 누르세요';
+    ws.send(JSON.stringify({t:'join',name:myName}));
+  };
+  ws.onerror=()=>{document.getElementById('connstatus').textContent='접속 실패 — 서버 확인';};
+  ws.onclose=()=>{announce('서버와의 연결이 끊어졌습니다');};
+  ws.onmessage=ev=>{
+    let m;try{m=JSON.parse(ev.data);}catch(e){return;}
+    if(m.t==='init'){
+      myId=m.id;SEED=m.seed;
+      takenSet=new Set(m.taken||[]);
+      if(!worldBuilt)buildWorld();
+      for(const idx of takenSet)removeItemIdx(idx);
+      for(const ca of (m.cars||[])){
+        const c=cars[ca[0]];
+        if(!c)continue;
+        c.hp=ca[4];c.drv=ca[5];c.fuel=ca[7];
+        if(ca[6]){c.mesh.position.x=ca[1];c.mesh.position.z=ca[2];c.heading=ca[3];c.tx=ca[1];c.tz=ca[2];c.th=ca[3];updateCarPose(c);}
+        if(c.hp<=0)wreckCar(c);
+        if(c.drv)carsByDriver.set(c.drv,c);
+      }
+      player.pos.set(m.spawn[0],terrainH(m.spawn[0],m.spawn[1])+EYE_STAND,m.spawn[1]);
+      for(const q of m.players){const r=addRemote(q.id,q.name,q.x,q.y,q.z);r.hp=q.hp;r.alive=!!q.alive;r.stance=q.stance;}
+      netReady=true;
+    }
+    else if(m.t==='pjoin'){addRemote(m.id,m.name,0,3,0);addFeedRaw(m.name+' 님이 전장에 입장');}
+    else if(m.t==='pname'){renameRemote(m.id,m.name);}
+    else if(m.t==='pleave'){const r=remotes.get(m.id);if(r)addFeedRaw(r.name+' 님이 퇴장');removeRemote(m.id);}
+    else if(m.t==='snap'){
+      const now=performance.now();
+      let aliveN=0;
+      for(const arr of m.p){
+        const [id,x,y,z,yaw,pr,hp,alive,helmet,bag,wIdx,armor]=arr;
+        aliveN+=alive;
+        if(id===myId)continue;
+        const r=remotes.get(id)||addRemote(id,'플레이어'+id,x,y,z);
+        r.buf.push({tt:now,x,y,z,yaw});
+        if(r.buf.length>30)r.buf.shift();
+        r.stance=pr?'prone':'stand';
+        r.hp=hp;r.alive=!!alive;
+        r.helmet=helmet;r.bag=bag;r.wIdx=wIdx;r.armor=armor;
+      }
+      carsByDriver.clear();
+      for(const ca of (m.c||[])){
+        const c=cars[ca[0]];
+        if(!c)continue;
+        c.hp=Math.min(c.hp,ca[4]);
+        c.drv=ca[5];
+        if(c.drv)carsByDriver.set(c.drv,c);
+        if(c!==driving&&ca[6]){c.tx=ca[1];c.tz=ca[2];c.th=ca[3];}
+        if(ca[4]<=0&&!c.dead)wreckCar(c);
+      }
+      const zz=m.z;
+      zoneS.cx=zz[0];zoneS.cz=zz[1];zoneS.r=zz[2];
+      zoneS.ncx=zz[3];zoneS.ncz=zz[4];zoneS.nr=zz[5];
+      zoneS.shrinking=!!zz[6];zoneS.timer=zz[7];zoneS.phase=zz[8];
+      document.getElementById('alivecount').textContent=aliveN;
+    }
+    else if(m.t==='takeok'){
+      const it=itemsByIdx.get(m.idx);
+      takenSet.add(m.idx);
+      if(m.by===myId&&it){applyPickup(it);}
+      removeItemIdx(m.idx);
+    }
+    else if(m.t==='itemadd'){
+      spawnItemAt(m.idx,m.x,m.z,m.type);
+    }
+    else if(m.t==='airdrop'){
+      announce('✈ 보급상자 투하! 미니맵의 주황 표시 확인');
+      const g=new THREE.Group();
+      const box=new THREE.Mesh(new THREE.BoxGeometry(1.1,0.8,1.1),new THREE.MeshLambertMaterial({color:0xc23b2e}));
+      g.add(box);
+      const chute=new THREE.Mesh(new THREE.ConeGeometry(2.2,1.6,10,1,true),new THREE.MeshLambertMaterial({color:0xeeeeee,side:THREE.DoubleSide}));
+      chute.position.y=2.4;g.add(chute);
+      g.position.set(m.x,150,m.z);
+      scene.add(g);
+      airdropsFalling.push({mesh:g,x:m.x,z:m.z,idx:m.idx});
+    }
+    else if(m.t==='redzone'){
+      redzone.active=true;redzone.x=m.x;redzone.z=m.z;redzone.t=11;redzone.boomT=0.4;
+      announce('⚠ 폭격 지역 발생! 붉은 구역을 벗어나세요');
+    }
+    else if(m.t==='rain'){
+      setRain(!!m.on);
+    }
+    else if(m.t==='shot'){
+      if(m.o&&m.e)spawnTracerArr(m.o,m.e);
+      const r=remotes.get(m.id);
+      if(r){
+        const d=Math.hypot(r.group.position.x-player.pos.x,r.group.position.z-player.pos.z);
+        playShot(Math.max(0.02,0.25-d*0.002),true);
+      }
+    }
+    else if(m.t==='nade'){
+      spawnNade(m.kind,new THREE.Vector3(m.o[0],m.o[1],m.o[2]),new THREE.Vector3(m.v[0],m.v[1],m.v[2]),false);
+    }
+    else if(m.t==='carenter'){
+      const c=cars[m.idx];
+      if(!c)return;
+      c.drv=m.id;
+      carsByDriver.set(m.id,c);
+      if(m.id===myId)enterCarLocal(c);
+      updateCarPose(c);
+    }
+    else if(m.t==='carexit'){
+      const c=cars[m.idx];
+      if(!c)return;
+      if(c.drv===m.id)c.drv=0;
+      carsByDriver.delete(m.id);
+      updateCarPose(c);
+    }
+    else if(m.t==='carboom'){
+      const c=cars[m.idx];
+      if(c&&!c.dead)wreckCar(c);
+    }
+    else if(m.t==='hp'){
+      if(m.id===myId){
+        if(m.hp<player.hp){
+          const f=document.getElementById('dmgflash');
+          f.style.opacity=1;setTimeout(()=>f.style.opacity=0,220);
+        }
+        player.hp=m.hp;
+        armorLocal=m.armor!==undefined?m.armor:armorLocal;
+        updateHUD();
+      } else {
+        const r=remotes.get(m.id);
+        if(r){r.hp=m.hp;if(m.armor!==undefined)r.armor=m.armor;}
+      }
+    }
+    else if(m.t==='kill'){
+      const kHtml=(m.killerId===myId)?'<span class="me">나</span>':m.killer;
+      const vHtml=(m.victimId===myId)?'<span class="me">나</span>':m.victim;
+      addKillFeed(kHtml,vHtml,m.head);
+      if(m.killerId===myId){player.kills++;announce(m.victim+' 처치!');updateHUD();}
+      if(m.victimId===myId){
+        player.dead=true;player.hp=0;updateHUD();
+        if(driving)exitCarLocal(true);
+        document.getElementById('deadoverlay').style.display='block';
+        document.getElementById('deadinfo').textContent=m.killer+'에게 당했습니다 · 처치 '+player.kills;
+        document.exitPointerLock();
+      } else {
+        const r=remotes.get(m.victimId);
+        if(r)r.alive=false;
+      }
+    }
+    else if(m.t==='win'){
+      announce('🏆 '+m.name+' 승리! — 이겼닭! 오늘 저녁은 치킨이닭! (곧 새 라운드)');
+    }
+    else if(m.t==='reset'){
+      try{localStorage.setItem('bg_name',myName);}catch(e){}
+      location.reload();
+    }
+  };
+}
+function applyPickup(it){
+  const type=it.type;
+  if(type==='helmet'){
+    if(hasHelmet){announce('이미 헬멧 착용 중');return;}
+    hasHelmet=true;sendGear();announce('헬멧 착용 — 피해 15% 감소');return;
+  }
+  if(type==='vest'){
+    if(armorLocal>=100){announce('이미 조끼 착용 중');return;}
+    armorLocal=100;sendGear();announce('방탄조끼 착용 — 방어력 100');updateHUD();return;
+  }
+  if(type==='backpack'){
+    const lv=it.level||1;
+    if(lv<=bagLevel){announce('이미 Lv'+bagLevel+' 가방 착용 중');return;}
+    bagLevel=lv;sendGear();announce('가방 Lv'+lv+' — 소지품 '+capacity()+'칸');renderInv();return;
+  }
+  if(type==='crate'||type==='airdrop'){
+    const n=type==='airdrop'?4:(2+Math.floor(rng(0,2)));
+    announce(type==='airdrop'?'✈ 보급 투하물 개봉!':'보급상자 개봉!');
+    const pool=type==='airdrop'
+      ?['sniper','medkit','grenade','vest','helmet','ammo','backpack']
+      :['ammo','med','vest','drink','grenade','smoke','fuel','bandage','helmet','medkit'];
+    for(let i=0;i<n;i++){
+      if(ws&&ws.readyState===1)ws.send(JSON.stringify({t:'drop',type:pool[Math.floor(rng(0,pool.length))],x:player.pos.x+rng(-2.4,2.4),z:player.pos.z+rng(1.5,3.5)}));
+    }
+    return;
+  }
+  if(addToInventory(type)){announce(itemLabel(it)+' 획득');updateHUD();}
+  else announce('가방이 가득 찼습니다 ('+inventory.length+'/'+capacity()+')');
+}
+
+// ================= 사운드 =================
+let AC=null,soundOn=true;
+function audio(){if(!AC)AC=new (window.AudioContext||window.webkitAudioContext)();return AC;}
+function playNoise(vol,dur,lp){
+  if(!soundOn)return;
+  try{
+    const ctx=audio();
+    const buf=ctx.createBuffer(1,ctx.sampleRate*dur,ctx.sampleRate);
+    const d=buf.getChannelData(0);
+    for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,2.0);
+    const src=ctx.createBufferSource();src.buffer=buf;
+    const f=ctx.createBiquadFilter();f.type='lowpass';f.frequency.value=lp;
+    const g=ctx.createGain();g.gain.value=vol;
+    src.connect(f).connect(g).connect(ctx.destination);src.start();
+  }catch(e){}
+}
+function playShot(vol,far){playNoise(vol,far?0.25:0.12,far?900:3500);}
+function playBoom(vol){playNoise(vol||0.5,0.7,240);}
+function playHit(){
+  if(!soundOn)return;
+  try{
+    const ctx=audio();
+    const o=ctx.createOscillator(),g2=ctx.createGain();
+    o.type='square';o.frequency.value=1700;
+    g2.gain.setValueAtTime(0.09,ctx.currentTime);
+    g2.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.05);
+    o.connect(g2).connect(ctx.destination);o.start();o.stop(ctx.currentTime+0.06);
+  }catch(e){}
+}
+
+// ================= 입력 =================
+const keys={};
+let locked=false,started=false;
+let mouseDown=false,ads=false,fireCooldown=0,reloading=0,meleeCd=0;
+document.getElementById('startbtn').addEventListener('click',()=>{
+  const inp=document.getElementById('nameinput');
+  myName=(inp.value||'').trim().slice(0,12)||('전사'+Math.floor(Math.random()*999));
+  if(!ws||ws.readyState!==1)connect();
+  else ws.send(JSON.stringify({t:'join',name:myName}));
+  const tryStart=()=>{
+    if(netReady){
+      document.getElementById('startscreen').style.display='none';
+      started=true;audio();
+      canvas.requestPointerLock();
+      renderInv();
+    } else setTimeout(tryStart,200);
+  };
+  tryStart();
+});
+try{const saved=localStorage.getItem('bg_name');if(saved)document.getElementById('nameinput').value=saved;}catch(e){}
+canvas.addEventListener('click',()=>{if(started&&!player.dead)canvas.requestPointerLock();});
+document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===canvas;});
+document.addEventListener('mousemove',e=>{
+  if(!locked||player.dead)return;
+  const sens=0.0022*(camera.fov/BASE_FOV);
+  player.yaw-=e.movementX*sens;
+  player.pitch-=e.movementY*sens;
+  player.pitch=clamp(player.pitch,-1.45,1.45);
+});
+document.addEventListener('mousedown',e=>{
+  if(!locked||player.dead)return;
+  if(e.button===0){mouseDown=true;if(!heldWeapon||!WEAPONS[heldWeapon.wtype].auto)tryFire();}
+  if(e.button===2&&!driving)ads=true;
+});
+document.addEventListener('mouseup',e=>{
+  if(e.button===0)mouseDown=false;
+  if(e.button===2)ads=false;
+});
+document.addEventListener('contextmenu',e=>e.preventDefault());
+document.addEventListener('keydown',e=>{
+  keys[e.code]=true;
+  if(player.dead)return;
+  if(e.code==='KeyR'&&!driving)startReload();
+  if(e.code==='KeyC'&&!driving&&player.hp>=20){
+    player.stance=player.stance==='prone'?'stand':'prone';
+  }
+  if(e.code==='KeyE'&&!driving)tryPickup();
+  if(e.code==='KeyF')toggleVehicle();
+  if(e.code==='KeyG'&&!driving&&!e.repeat){
+    if(inventory.some(s=>s.type==='grenade'))nadeCharge=0;
+    else announce('수류탄이 없습니다');
+  }
+  if(e.code==='KeyV'){
+    viewMode=viewMode==='fps'?'tps':'fps';
+    if(driving)driving.cabin.visible=(viewMode==='tps');
+    announce(viewMode==='tps'?'3인칭 시점':'1인칭 시점');
+  }
+  if(e.code==='KeyM'){soundOn=!soundOn;try{if(engGain)engGain.gain.value=soundOn?0.035:0;}catch(err){}announce(soundOn?'효과음 켜짐':'효과음 꺼짐');}
+  if(e.code.startsWith('Digit')){
+    const n=parseInt(e.code.slice(5));
+    if(n>=1&&n<=8){
+      if(driving){
+        const sl=inventory[n-1];
+        if(sl&&sl.type==='fuel')useSlot(n-1);
+      } else if(e.shiftKey)dropSlot(n-1);
+      else useSlot(n-1);
+    }
+  }
+});
+document.addEventListener('keyup',e=>{
+  keys[e.code]=false;
+  if(e.code==='KeyG'&&nadeCharge>=0){
+    const p=nadeCharge;
+    cancelNade();
+    if(!player.dead){
+      const sl=inventory.find(s=>s.type==='grenade');
+      if(sl){consume(sl);throwNadeLocal('frag',p);}
+    }
+  }
+});
+function startReload(){
+  if(!heldWeapon){announce('무기가 없습니다');return;}
+  const wp=WEAPONS[heldWeapon.wtype];
+  if(reloading>0||heldWeapon.ammo>=wp.mag)return;
+  if(sumAmmo()<=0){announce('탄약이 없습니다');return;}
+  reloading=wp.reload;
+  announce('재장전 중...');
+}
+function toggleVehicle(){
+  if(driving){exitCarLocal(true);}
+  else{
+    const c=nearestCar(3.8);
+    if(!c)return;
+    if(ws&&ws.readyState===1)ws.send(JSON.stringify({t:'carreq',idx:c.idx}));
+  }
+}
+
+// ================= 줍기 =================
+let nearItemIdx=-1;
+function updateItems(dt){
+  nearItemIdx=-1;
+  const t=performance.now()*0.002;
+  let bestD=2.4;
+  for(const [idx,it] of itemsByIdx){
+    it.mesh.rotation.y=t;
+    it.mesh.position.y=it.gy+0.35+Math.sin(t*2+it.x)*0.06;
+    if(!driving){
+      const d=Math.hypot(it.x-player.pos.x,it.z-player.pos.z);
+      if(d<bestD&&Math.abs(it.gy-(player.pos.y-player.eyeCur))<2.2){bestD=d;nearItemIdx=idx;}
+    }
+  }
+  const hint=document.getElementById('hint');
+  if(driving){
+    hint.style.display='block';
+    hint.innerHTML='<b>F</b> 하차'+(driving.fuel<=1?' · ⛽ 연료 없음! 기름통 슬롯 숫자키':'');
+  } else if(nearItemIdx>=0){
+    const it=itemsByIdx.get(nearItemIdx);
+    hint.style.display='block';
+    hint.innerHTML='<b>E</b> '+itemLabel(it)+' 줍기 <span style="color:#999">('+inventory.length+'/'+capacity()+'칸)</span>';
+  } else if(nearestCar(3.8)){
+    hint.style.display='block';
+    hint.innerHTML='<b>F</b> 차량 탑승';
+  } else hint.style.display='none';
+}
+function tryPickup(){
+  if(nearItemIdx<0)return;
+  if(ws&&ws.readyState===1)ws.send(JSON.stringify({t:'take',idx:nearItemIdx}));
+}
+
+// ================= 사격 =================
+const raycaster=new THREE.Raycaster();
+function spawnTracer(from,to){
+  const geo=new THREE.BufferGeometry().setFromPoints([from,to]);
+  const line=new THREE.Line(geo,new THREE.LineBasicMaterial({color:0xffe9a3,transparent:true,opacity:0.85}));
+  scene.add(line);
+  tracers.push({line,t:0.09});
+}
+function spawnTracerArr(o,e){spawnTracer(new THREE.Vector3(o[0],o[1],o[2]),new THREE.Vector3(e[0],e[1],e[2]));}
+function isMoving(){return keys['KeyW']||keys['KeyA']||keys['KeyS']||keys['KeyD'];}
+function meleeAttack(){
+  if(meleeCd>0)return;
+  meleeCd=0.55;
+  playNoise(0.1,0.08,900);
+  const dir=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+  for(const r of remotes.values()){
+    if(!r.alive||carsByDriver.get(r.id))continue;
+    const to=r.group.position.clone().add(new THREE.Vector3(0,1.1,0)).sub(player.pos);
+    const d=to.length();
+    if(d<2.6&&to.normalize().dot(dir)>0.55){
+      if(ws&&ws.readyState===1)ws.send(JSON.stringify({t:'hit',target:r.id,w:'fist',head:false}));
+      playHit();
+      break;
+    }
+  }
+  gunGroup.rotation.x=-0.35;
+  setTimeout(()=>{gunGroup.rotation.x=0;},130);
+}
+function tryFire(){
+  if(player.dead||!started||reloading>0||fireCooldown>0||driving)return;
+  if(!heldWeapon){meleeAttack();return;}
+  const wp=WEAPONS[heldWeapon.wtype];
+  if(heldWeapon.ammo<=0){startReload();return;}
+  heldWeapon.ammo--;
+  fireCooldown=60/wp.rpm;
+  playShot(0.3,false);
+  flash.intensity=2.5;
+  setTimeout(()=>{flash.intensity=0;},45);
+  player.pitch+=wp.recoil*(0.7+Math.random()*0.6);
+  player.yaw+=(Math.random()-0.5)*wp.recoil*0.7;
+  let spread=(ads?wp.adsSpread:wp.spread)*(isMoving()?1.6:1);
+  if(player.stance==='prone')spread*=0.6;
+  const origin=viewMode==='tps'?player.pos.clone():camera.position.clone();
+  const targets=[];
+  for(const r of remotes.values()){if(r.alive&&r.group.visible)targets.push(r.group);}
+  const carBodies=[];
+  for(const c of cars){if(!c.dead)carBodies.push(c.body,c.cabin);}
+  const allTargets=targets.concat(solids,carBodies);
+  for(let pi=0;pi<wp.pellets;pi++){
+    const dir=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+    dir.x+=(Math.random()-0.5)*spread*2;
+    dir.y+=(Math.random()-0.5)*spread*2;
+    dir.normalize();
+    raycaster.set(origin,dir);
+    raycaster.far=wp.range;
+    const hits=raycaster.intersectObjects(allTargets,true);
+    const tHit=terrainHitDist(origin.x,origin.y,origin.z,dir.x,dir.y,dir.z,wp.range);
+    let end=null;
+    if(tHit>=0&&(hits.length===0||tHit<hits[0].distance)){
+      end=origin.clone().add(dir.clone().multiplyScalar(tHit));
+    } else if(hits.length>0){
+      const h=hits[0];
+      end=h.point;
+      const carRef=h.object.userData.carRef;
+      if(carRef){
+        if(ws&&ws.readyState===1)ws.send(JSON.stringify({t:'cardmg',idx:carRef.idx,dmg:(heldWeapon.wtype==='sniper'?48:16)}));
+      } else {
+        let root=h.object;
+        while(root.parent&&root.parent!==scene&&root.userData.rid===undefined)root=root.parent;
+        if(root.userData.rid!==undefined){
+          const isHead=h.object.userData.part==='head';
+          const hm=document.getElementById('hitmarker');
+          hm.style.opacity=1;setTimeout(()=>hm.style.opacity=0,110);
+          playHit();
+          if(ws&&ws.readyState===1)ws.send(JSON.stringify({t:'hit',target:root.userData.rid,w:heldWeapon.wtype,head:isHead}));
+        }
+      }
+    }
+    if(!end)end=origin.clone().add(dir.clone().multiplyScalar(wp.range));
+    const tStart=origin.clone().add(dir.clone().multiplyScalar(1.2)).add(new THREE.Vector3(0,-0.08,0));
+    spawnTracer(tStart,end);
+    if(pi===0&&ws&&ws.readyState===1)ws.send(JSON.stringify({t:'shoot',o:[+tStart.x.toFixed(1),+tStart.y.toFixed(1),+tStart.z.toFixed(1)],e:[+end.x.toFixed(1),+end.y.toFixed(1),+end.z.toFixed(1)],w:heldWeapon.wtype}));
+  }
+  updateHUD();
+}
+
+// ================= 이동 =================
+let bobT=0;
+function applyFov(dt){
+  const wp=heldWeapon?WEAPONS[heldWeapon.wtype]:null;
+  const scoped=ads&&wp&&wp.scope&&!driving;
+  const targetFov=driving?BASE_FOV:(ads&&wp?(wp.scope?ADS_FOV_SNIPER:ADS_FOV_RIFLE):BASE_FOV);
+  camera.fov+=(targetFov-camera.fov)*Math.min(1,dt*10);
+  camera.updateProjectionMatrix();
+  document.getElementById('scope').style.display=(scoped&&camera.fov<30)?'block':'none';
+  gunGroup.visible=!driving&&!!heldWeapon&&!(scoped&&camera.fov<30)&&viewMode==='fps';
+  document.getElementById('crosshair').style.opacity=(scoped||driving)?0:(ads?0.4:1);
+}
+function updatePlayer(dt){
+  if(player.dead||!worldBuilt)return;
+  if(driving){updateDriving(dt);return;}
+  const crawl=player.hp>0&&player.hp<20;
+  const prone=player.stance==='prone'||crawl;
+  const stEl=document.getElementById('stance');
+  stEl.style.display=prone?'block':'none';
+  stEl.textContent=crawl?'기어가는 중 — 체력 위험!':'엎드림';
+  const targetEye=prone?EYE_PRONE:EYE_STAND;
+  player.eyeCur+=(targetEye-player.eyeCur)*Math.min(1,dt*10);
+  const eye=player.eyeCur;
+  if(player.boostT>0){player.boostT-=dt;}
+  let speed=keys['ShiftLeft']&&!prone&&!ads?9.2:5.2;
+  if(prone)speed*=0.35;
+  if(ads)speed*=0.6;
+  if(player.boostT>0)speed*=1.12;
+  const f=new THREE.Vector3(Math.sin(player.yaw),0,Math.cos(player.yaw));
+  const r=new THREE.Vector3(f.z,0,-f.x);
+  let mx=0,mz=0;
+  if(keys['KeyW']){mx-=f.x;mz-=f.z;}
+  if(keys['KeyS']){mx+=f.x;mz+=f.z;}
+  if(keys['KeyA']){mx-=r.x;mz-=r.z;}
+  if(keys['KeyD']){mx+=r.x;mz+=r.z;}
+  const len=Math.hypot(mx,mz);
+  if(len>0){mx/=len;mz/=len;}
+  const feetY=player.pos.y-eye;
+  const aheadG=groundYAt(player.pos.x+mx*1.5,player.pos.z+mz*1.5,feetY,false);
+  const hereG=groundYAt(player.pos.x,player.pos.z,feetY,false);
+  const slope=aheadG-hereG;
+  const slopeFactor=slope>0.6?Math.max(0.35,1-slope*0.4):1;
+  let nx=player.pos.x+mx*speed*slopeFactor*dt;
+  let nz=player.pos.z+mz*speed*slopeFactor*dt;
+  if(!collideEnt(nx,player.pos.z,0.35,feetY))player.pos.x=nx;
+  if(!collideEnt(player.pos.x,nz,0.35,feetY))player.pos.z=nz;
+  player.pos.x=clamp(player.pos.x,-MAP_HALF,MAP_HALF);
+  player.pos.z=clamp(player.pos.z,-MAP_HALF,MAP_HALF);
+  const dep=depenetrate(player.pos.x,player.pos.z,0.35,player.pos.y-eye);
+  player.pos.x=dep[0];player.pos.z=dep[1];
+  const gY=groundYAt(player.pos.x,player.pos.z,player.pos.y-eye,false)+eye;
+  if(keys['Space']&&player.onGround){
+    if(prone){if(!crawl){player.stance='stand';}}
+    else{player.velY=6.5;player.onGround=false;}
+  }
+  if(!player.onGround){
+    const prevFeet=player.pos.y-eye;
+    player.velY-=18*dt;
+    player.pos.y+=player.velY*dt;
+    const landY=groundYAt(player.pos.x,player.pos.z,prevFeet+0.03,true)+eye;
+    if(player.velY<=0&&player.pos.y<=landY){player.pos.y=landY;player.velY=0;player.onGround=true;}
+  } else {
+    if(player.pos.y-gY>0.9){player.onGround=false;player.velY=0;}
+    else player.pos.y+=(gY-player.pos.y)*Math.min(1,dt*14);
+  }
+  if(len>0&&player.onGround)bobT+=dt*(keys['ShiftLeft']&&!prone?11:7);
+  const bob=Math.sin(bobT)*(prone?0.012:0.03)*(len>0?1:0);
+  camera.position.copy(player.pos);
+  camera.position.y+=bob;
+  camera.rotation.set(0,0,0);
+  camera.rotateY(player.yaw);
+  camera.rotateX(player.pitch);
+  if(viewMode==='tps'&&!ads){
+    const vdir=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+    const rightV=new THREE.Vector3(vdir.z,0,-vdir.x).normalize();
+    let camDist=4.4;
+    tpsRay.set(camera.position,vdir.clone().multiplyScalar(-1));
+    tpsRay.far=camDist;
+    const hh=tpsRay.intersectObjects(solids,false);
+    if(hh.length>0)camDist=Math.max(0.6,hh[0].distance-0.35);
+    const cpx=camera.position.x-vdir.x*camDist+rightV.x*0.55;
+    const cpz=camera.position.z-vdir.z*camDist+rightV.z*0.55;
+    let cpy=camera.position.y-vdir.y*camDist+0.25;
+    const tg=terrainH(cpx,cpz)+0.35;
+    if(cpy<tg)cpy=tg;
+    camera.position.set(cpx,cpy,cpz);
+  }
+  applyFov(dt);
+  const tx=ads?0:0.28,ty=ads?-0.13:-0.24,tz=ads?-0.5:-0.6;
+  gunGroup.position.x+=(tx-gunGroup.position.x)*Math.min(1,dt*14);
+  gunGroup.position.y+=(ty-gunGroup.position.y)*Math.min(1,dt*14)+Math.sin(bobT*2)*0.004*(len>0?1:0);
+  gunGroup.position.z+=(tz-gunGroup.position.z)*Math.min(1,dt*14);
+  playerModel.visible=viewMode==='tps'&&!player.dead;
+  if(playerModel.visible){
+    playerModel.position.set(player.pos.x,player.pos.y-player.eyeCur,player.pos.z);
+    playerModel.rotation.y=player.yaw;
+    playerModel.scale.y=prone?0.5:1;
+    applyGearToModel(playerModel,hasHelmet,armorLocal,bagLevel,heldWeapon?WNAME2IDX[heldWeapon.wtype]:0);
+  }
+}
+
+// ================= 이벤트 (에어드랍/폭격/비) =================
+function updateAirdrops(dt){
+  for(let i=airdropsFalling.length-1;i>=0;i--){
+    const ad=airdropsFalling[i];
+    ad.mesh.position.y-=9*dt;
+    ad.mesh.rotation.y+=dt*0.5;
+    const gy=terrainH(ad.x,ad.z);
+    if(ad.mesh.position.y<=gy+0.4){
+      scene.remove(ad.mesh);
+      airdropsFalling.splice(i,1);
+      spawnItemAt(ad.idx,ad.x,ad.z,'airdrop');
+      playBoom(0.18);
+    }
+  }
+}
+function updateRedzone(dt){
+  if(!redzone.active)return;
+  redzone.t-=dt;redzone.boomT-=dt;
+  if(redzone.boomT<=0){
+    redzone.boomT=rng(0.35,0.8);
+    const a=Math.random()*Math.PI*2,rr=Math.random()*redzone.r;
+    const bx=redzone.x+Math.cos(a)*rr,bz=redzone.z+Math.sin(a)*rr;
+    const bpos=new THREE.Vector3(bx,terrainH(bx,bz)+0.6,bz);
+    boomFX(bpos,7);
+    playBoom(0.3);
+    if(!player.dead&&!driving){
+      const d=player.pos.distanceTo(bpos);
+      if(d<7.5&&ws&&ws.readyState===1)ws.send(JSON.stringify({t:'selfdmg',amt:90*(1-d/7.5)+10,cause:'폭격'}));
+    }
+  }
+  if(redzone.t<=0)redzone.active=false;
+}
+let rainObj=null,raining=false;
+{
+  const N=900;
+  const rgeo=new THREE.BufferGeometry();
+  const rpos=new Float32Array(N*3);
+  for(let i=0;i<N;i++){rpos[i*3]=rng(-30,30);rpos[i*3+1]=rng(0,40);rpos[i*3+2]=rng(-30,30);}
+  rgeo.setAttribute('position',new THREE.BufferAttribute(rpos,3));
+  rainObj=new THREE.Points(rgeo,new THREE.PointsMaterial({color:0xaac7e8,size:0.14,transparent:true,opacity:0.7}));
+  rainObj.frustumCulled=false;
+  rainObj.visible=false;
+  scene.add(rainObj);
+}
+function setRain(on){
+  raining=on;
+  rainObj.visible=on;
+  scene.fog.far=on?520:650;
+  scene.background.set(on?0x8aa4bd:0x9db8d2);
+  announce(on?'🌧 비가 내리기 시작합니다':'비가 그쳤습니다');
+}
+function updateRain(dt){
+  if(!raining)return;
+  const p=rainObj.geometry.attributes.position;
+  for(let i=0;i<p.count;i++){
+    let y=p.getY(i)-38*dt;
+    if(y<0)y+=40;
+    p.setY(i,y);
+  }
+  p.needsUpdate=true;
+  rainObj.position.set(camera.position.x,camera.position.y-18,camera.position.z);
+}
+
+// ================= 자기장 =================
+const zoneWall=new THREE.Mesh(new THREE.CylinderGeometry(1,1,320,64,1,true),new THREE.MeshBasicMaterial({color:0x3d7dff,transparent:true,opacity:0.22,side:THREE.DoubleSide,depthWrite:false}));
+zoneWall.position.y=160;
+scene.add(zoneWall);
+let zoneReportT=0;
+function updateZoneClient(dt){
+  zoneWall.scale.set(zoneS.r,1,zoneS.r);
+  zoneWall.position.x=zoneS.cx;zoneWall.position.z=zoneS.cz;
+  const tEl=document.getElementById('zonetimer');
+  if(zoneS.shrinking){tEl.classList.add('warn');tEl.textContent='자기장 축소 중 '+zoneS.timer+'초';}
+  else{tEl.classList.remove('warn');tEl.textContent='자기장 축소까지 '+zoneS.timer+'초';}
+  const d=Math.hypot(player.pos.x-zoneS.cx,player.pos.z-zoneS.cz);
+  const out=d>zoneS.r&&!player.dead;
+  document.getElementById('zoneflash').style.opacity=out?1:0;
+  zoneReportT-=dt;
+  if(out&&zoneReportT<=0&&ws&&ws.readyState===1){
+    zoneReportT=1;
+    ws.send(JSON.stringify({t:'zone'}));
+  }
+}
+
+// ================= 미니맵 =================
+const mmc=document.getElementById('minimap').getContext('2d');
+const mmBg=document.createElement('canvas');
+mmBg.width=190;mmBg.height=190;
+function buildMinimapBg(){
+  const c=mmBg.getContext('2d');
+  const S=190,N=95,cell=S/N;
+  for(let iy=0;iy<N;iy++){
+    for(let ix=0;ix<N;ix++){
+      const x=(ix/N)*MAP_HALF*2-MAP_HALF;
+      const z=(iy/N)*MAP_HALF*2-MAP_HALF;
+      const h=terrainH(x,z);
+      let col;
+      if(h<7)col='rgb('+(96+h*4|0)+','+(133+h*2|0)+','+(70+h*3|0)+')';
+      else if(h<22){const k=(h-7)/15;col='rgb('+(124+k*10|0)+','+(120+k*8|0)+','+(88+k*30|0)+')';}
+      else if(h<40){const k=(h-22)/18;col='rgb('+(134+k*90|0)+','+(138+k*90|0)+','+(140+k*90|0)+')';}
+      else col='#e6ebef';
+      c.fillStyle=col;
+      c.fillRect(ix*cell,iy*cell,cell+1,cell+1);
+    }
+  }
+  c.fillStyle='#4a4438';
+  const scale=S/(MAP_HALF*2);
+  for(const b of mmBuildings){
+    c.fillRect((b.x+MAP_HALF)*scale-Math.max(1.5,b.hx*2*scale)/2,(b.z+MAP_HALF)*scale-Math.max(1.5,b.hz*2*scale)/2,Math.max(1.5,b.hx*2*scale),Math.max(1.5,b.hz*2*scale));
+  }
+}
+function drawMinimap(){
+  if(!worldBuilt)return;
+  const S=190,scale=S/(MAP_HALF*2);
+  mmc.drawImage(mmBg,0,0);
+  mmc.strokeStyle='rgba(255,255,255,.9)';mmc.lineWidth=1.5;
+  mmc.beginPath();
+  mmc.arc((zoneS.cx+MAP_HALF)*scale,(zoneS.cz+MAP_HALF)*scale,zoneS.r*scale,0,Math.PI*2);mmc.stroke();
+  mmc.strokeStyle='rgba(255,255,255,.55)';mmc.setLineDash([4,3]);
+  mmc.beginPath();
+  mmc.arc((zoneS.ncx+MAP_HALF)*scale,(zoneS.ncz+MAP_HALF)*scale,zoneS.nr*scale,0,Math.PI*2);mmc.stroke();
+  mmc.setLineDash([]);
+  mmc.save();
+  mmc.beginPath();
+  mmc.rect(0,0,S,S);
+  mmc.arc((zoneS.cx+MAP_HALF)*scale,(zoneS.cz+MAP_HALF)*scale,zoneS.r*scale,0,Math.PI*2,true);
+  mmc.fillStyle='rgba(50,100,255,.28)';
+  mmc.fill('evenodd');
+  mmc.restore();
+  if(redzone.active){
+    mmc.fillStyle='rgba(255,45,45,.32)';
+    mmc.beginPath();
+    mmc.arc((redzone.x+MAP_HALF)*scale,(redzone.z+MAP_HALF)*scale,redzone.r*scale,0,Math.PI*2);
+    mmc.fill();
+  }
+  for(const c of cars){
+    mmc.fillStyle=c.dead?'#555':'#5ad0ff';
+    mmc.fillRect((c.mesh.position.x+MAP_HALF)*scale-2,(c.mesh.position.z+MAP_HALF)*scale-2,4,4);
+  }
+  mmc.fillStyle='#ff8c1a';
+  for(const ad of airdropsFalling)mmc.fillRect((ad.x+MAP_HALF)*scale-3,(ad.z+MAP_HALF)*scale-3,6,6);
+  for(const [idx,it] of itemsByIdx){if(it.type==='airdrop')mmc.fillRect((it.x+MAP_HALF)*scale-3,(it.z+MAP_HALF)*scale-3,6,6);}
+  const px=(player.pos.x+MAP_HALF)*scale,pz=(player.pos.z+MAP_HALF)*scale;
+  mmc.save();
+  mmc.translate(px,pz);
+  mmc.rotate(driving?-driving.heading+Math.PI:-player.yaw);
+  mmc.fillStyle='#fff';mmc.strokeStyle='#000';mmc.lineWidth=0.8;
+  mmc.beginPath();mmc.moveTo(0,-6);mmc.lineTo(4,5);mmc.lineTo(-4,5);mmc.closePath();
+  mmc.fill();mmc.stroke();
+  mmc.restore();
+}
+
+// ================= HUD =================
+function updateHUD(){
+  document.getElementById('healthbar').style.width=player.hp+'%';
+  document.getElementById('healthbar').style.background=player.hp>50?'linear-gradient(#f5f5f5,#cfcfcf)':(player.hp>25?'#ffb23d':'#ff4d4d');
+  document.getElementById('armorbar').style.width=armorLocal+'%';
+  if(heldWeapon){
+    const wp=WEAPONS[heldWeapon.wtype];
+    document.getElementById('weaponname').textContent=wp.name;
+    document.getElementById('ammocur').textContent=heldWeapon.ammo;
+    document.getElementById('ammores').textContent='/ '+sumAmmo();
+  } else {
+    document.getElementById('weaponname').textContent='맨손';
+    document.getElementById('ammocur').textContent='-';
+    document.getElementById('ammores').textContent='/ '+sumAmmo();
+  }
+  document.getElementById('killcount').textContent=player.kills;
+}
+let announceTimer=null;
+function announce(msg){
+  const a=document.getElementById('announce');
+  a.innerHTML=msg;a.style.opacity=1;
+  clearTimeout(announceTimer);
+  announceTimer=setTimeout(()=>a.style.opacity=0,2600);
+}
+function addKillFeed(killer,victim,headshot){
+  const kf=document.getElementById('killfeed');
+  const el=document.createElement('div');
+  el.className='feeditem';
+  el.innerHTML=killer+' '+(headshot?'☠(헤드샷)':'✖')+' <b>'+victim+'</b>';
+  kf.prepend(el);
+  while(kf.children.length>6)kf.removeChild(kf.lastChild);
+  setTimeout(()=>{if(el.parentNode)el.remove();},7000);
+}
+function addFeedRaw(text){
+  const kf=document.getElementById('killfeed');
+  const el=document.createElement('div');
+  el.className='feeditem';
+  el.textContent=text;
+  kf.prepend(el);
+  while(kf.children.length>6)kf.removeChild(kf.lastChild);
+  setTimeout(()=>{if(el.parentNode)el.remove();},5000);
+}
+
+// ================= 상태 송신 =================
+setInterval(()=>{
+  if(!started||!netReady||player.dead||!ws||ws.readyState!==1)return;
+  ws.send(JSON.stringify({
+    t:'state',
+    x:+player.pos.x.toFixed(2),y:+player.pos.y.toFixed(2),z:+player.pos.z.toFixed(2),
+    yaw:+player.yaw.toFixed(3),pitch:+player.pitch.toFixed(3),
+    stance:(player.stance==='prone'||player.hp<20)?'prone':'stand',
+    w:heldWeapon?heldWeapon.wtype:'',
+  }));
+},66);
+setInterval(()=>{
+  if(!started||!driving||!ws||ws.readyState!==1)return;
+  ws.send(JSON.stringify({t:'carstate',idx:driving.idx,x:+driving.mesh.position.x.toFixed(1),z:+driving.mesh.position.z.toFixed(1),h:+driving.heading.toFixed(2),fuel:Math.round(driving.fuel)}));
+},100);
+
+// ================= 메인 루프 =================
+let last=performance.now();
+function loop(now){
+  requestAnimationFrame(loop);
+  const dt=Math.min(0.05,(now-last)/1000);
+  last=now;
+  if(started){
+    updatePlayer(dt);
+    updateRemotes();
+    updateRemoteCars(dt);
+    updateZoneClient(dt);
+    updateItems(dt);
+    updateGrenades(dt);
+    updateNadeCharge(dt);
+    updateAirdrops(dt);
+    updateRedzone(dt);
+    updateSmokes(dt);
+    updateRain(dt);
+    fireCooldown-=dt;
+    meleeCd-=dt;
+    if(mouseDown&&heldWeapon&&WEAPONS[heldWeapon.wtype].auto)tryFire();
+    if(reloading>0){
+      reloading-=dt;
+      gunGroup.rotation.x=Math.sin(reloading*6)*0.25;
+      if(reloading<=0){
+        reloading=0;gunGroup.rotation.x=0;
+        if(heldWeapon){
+          const wp=WEAPONS[heldWeapon.wtype];
+          heldWeapon.ammo+=takeAmmo(wp.mag-heldWeapon.ammo);
+        }
+        updateHUD();
+      }
+    }
+    drawMinimap();
+  }
+  for(let i=tracers.length-1;i>=0;i--){
+    tracers[i].t-=dt;
+    tracers[i].line.material.opacity=Math.max(0,tracers[i].t/0.09*0.85);
+    if(tracers[i].t<=0){scene.remove(tracers[i].line);tracers.splice(i,1);}
+  }
+  for(let i=effects.length-1;i>=0;i--){
+    const ef=effects[i];
+    ef.t+=dt;
+    const k=ef.t/ef.dur;
+    if(k>=1){scene.remove(ef.mesh);effects.splice(i,1);continue;}
+    ef.mesh.scale.setScalar(1+k*ef.maxScale);
+    ef.mesh.material.opacity=0.85*(1-k);
+  }
+  renderer.render(scene,camera);
+}
+renderInv();
+updateHUD();
+requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>

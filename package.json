@@ -1,0 +1,12 @@
+{
+  "name": "bg-online",
+  "version": "1.0.0",
+  "description": "BATTLE GROUNDS ONLINE multiplayer server",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
