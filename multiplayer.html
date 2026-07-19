@@ -91,6 +91,7 @@
     <div class="pill" id="alivepill">생존 <b id="alivecount">-</b></div>
     <div class="pill" id="zonetimer">자기장 대기</div>
     <div class="pill" id="killpill">처치 <b id="killcount">0</b></div>
+    <div class="pill" id="pingpill" style="font-size:12px;color:#9fd49f">핑 -</div>
   </div>
   <div id="killfeed"></div>
   <div id="minimapwrap"><canvas id="minimap" width="190" height="190"></canvas></div>
@@ -152,7 +153,7 @@ const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const canvas=document.getElementById('game');
 const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
 renderer.setSize(innerWidth,innerHeight);
-renderer.setPixelRatio(Math.min(devicePixelRatio,1.6));
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.25));
 renderer.shadowMap.enabled=true;
 renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 const scene=new THREE.Scene();
@@ -164,7 +165,7 @@ addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updat
 const sun=new THREE.DirectionalLight(0xfff3d6,1.15);
 sun.position.set(180,320,120);
 sun.castShadow=true;
-sun.shadow.mapSize.set(2048,2048);
+sun.shadow.mapSize.set(1024,1024);
 sun.shadow.camera.left=-380;sun.shadow.camera.right=380;
 sun.shadow.camera.top=380;sun.shadow.camera.bottom=-380;
 sun.shadow.camera.far=1000;
@@ -759,6 +760,7 @@ camera.add(gunGroup);
 scene.add(camera);
 const flash=new THREE.PointLight(0xffcc66,0,8);flash.position.set(0,0,-1);camera.add(flash);
 const tpsRay=new THREE.Raycaster();
+let tpsThrottle=0,tpsCamDist=4.4;
 
 function makeCharModel(color){
   const g=new THREE.Group();
@@ -835,7 +837,7 @@ function removeRemote(id){
   scene.remove(r.group);remotes.delete(id);
 }
 function updateRemotes(dt){
-  const renderT=performance.now()-120;
+  const renderT=performance.now()-interpDelay;
   for(const r of remotes.values()){
     const inCar=occByPlayer.get(r.id);
     r.group.visible=r.alive&&!inCar;
@@ -1212,6 +1214,7 @@ function cancelNade(){nadeCharge=-1;trajLine.visible=false;landMark.visible=fals
 
 // ================= 네트워크 =================
 let ws=null,myId=0,myName='';
+let pingMs=0,interpDelay=140;
 let netReady=false;
 const zoneS={cx:0,cz:0,r:MAP_HALF,ncx:0,ncz:0,nr:0,shrinking:false,timer:0,phase:0};
 const airdropsFalling=[];
@@ -1316,6 +1319,14 @@ function connect(){
     }
     else if(m.t==='rain'){
       setRain(!!m.on);
+    }
+    else if(m.t==='pong'){
+      pingMs=Math.round(performance.now()-m.ts);
+      // 핑에 맞춰 보간 버퍼 자동 조절 (원거리 서버에서도 부드럽게)
+      interpDelay=clamp(pingMs*0.6+90,120,320);
+      const pp=document.getElementById('pingpill');
+      pp.textContent='핑 '+pingMs+'ms';
+      pp.style.color=pingMs<80?'#9fd49f':(pingMs<180?'#ffd76a':'#ff8a6a');
     }
     else if(m.t==='shot'){
       if(m.o&&m.e)spawnTracerArr(m.o,m.e);
@@ -1802,10 +1813,15 @@ function updatePlayer(dt){
     const vdir=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
     const rightV=new THREE.Vector3(vdir.z,0,-vdir.x).normalize();
     let camDist=4.4;
-    tpsRay.set(camera.position,vdir.clone().multiplyScalar(-1));
-    tpsRay.far=camDist;
-    const hh=tpsRay.intersectObjects(solids,false);
-    if(hh.length>0)camDist=Math.max(0.6,hh[0].distance-0.35);
+    tpsThrottle-=dt;
+    if(tpsThrottle<=0){
+      tpsThrottle=0.09;
+      tpsRay.set(camera.position,vdir.clone().multiplyScalar(-1));
+      tpsRay.far=camDist;
+      const hh=tpsRay.intersectObjects(solids,false);
+      tpsCamDist=(hh.length>0)?Math.max(0.6,hh[0].distance-0.35):camDist;
+    }
+    camDist=tpsCamDist;
     const cpx=camera.position.x-vdir.x*camDist+rightV.x*0.55;
     const cpz=camera.position.z-vdir.z*camDist+rightV.z*0.55;
     let cpy=camera.position.y-vdir.y*camDist+0.25;
@@ -2037,17 +2053,39 @@ setInterval(()=>{
   }));
 },66);
 setInterval(()=>{
+  if(!ws||ws.readyState!==1)return;
+  ws.send(JSON.stringify({t:'ping',ts:performance.now()}));
+},2000);
+setInterval(()=>{
   if(!started||!driving||!ws||ws.readyState!==1)return;
   ws.send(JSON.stringify({t:'carstate',idx:driving.idx,x:+driving.mesh.position.x.toFixed(1),z:+driving.mesh.position.z.toFixed(1),h:+driving.heading.toFixed(2),fuel:Math.round(driving.fuel)}));
 },100);
 
 // ================= 메인 루프 =================
 let last=performance.now();
+let fpsAcc=0,fpsN=0,fpsCheckT=0,lowGfx=false;
+function autoQuality(dt){
+  if(lowGfx)return;
+  fpsAcc+=1/Math.max(0.001,dt);fpsN++;fpsCheckT+=dt;
+  if(fpsCheckT>=5){
+    const avg=fpsAcc/fpsN;
+    fpsAcc=0;fpsN=0;fpsCheckT=0;
+    if(avg<40){
+      lowGfx=true;
+      renderer.shadowMap.enabled=false;
+      sun.castShadow=false;
+      renderer.setPixelRatio(1);
+      scene.fog.far=480;
+      announce('⚙ 프레임이 낮아 그래픽을 자동으로 낮췄습니다');
+    }
+  }
+}
 function loop(now){
   requestAnimationFrame(loop);
   const dt=Math.min(0.05,(now-last)/1000);
   last=now;
   if(started){
+    autoQuality(dt);
     updateRemoteCars(dt);
     updatePlayer(dt);
     updateRemotes(dt);

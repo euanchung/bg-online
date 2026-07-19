@@ -156,6 +156,9 @@ wss.on('connection', (ws) => {
       let dmg = (m.w === 'nade') ? Math.max(0, Math.min(130, +m.dmg || 0)) : (m.head ? wp.h : wp.b);
       applyDamage(tgt, dmg, p, !!m.head, null);
     }
+    else if (m.t === 'ping') {
+      send(p, { t: 'pong', ts: m.ts });
+    }
     else if (m.t === 'zone') {
       if (!p.alive || !roundActive) return;
       const d = Math.hypot(p.x - zone.cx, p.z - zone.cz);
@@ -336,7 +339,14 @@ setInterval(() => {
     [p.id, +p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2), +p.yaw.toFixed(3),
      p.stance === 'prone' ? 1 : 0, Math.round(p.hp), p.alive ? 1 : 0,
      p.helmet ? 1 : 0, p.bag, WIDX[p.w] || 0, Math.round(p.armor)]);
-  const carList = cars.map((c, i) => [i, +c.x.toFixed(1), +c.z.toFixed(1), +c.h.toFixed(2), Math.round(c.hp), c.drv, c.mv, Math.round(c.fuel), c.pass.slice()]);
+  // 대역폭 절감: 움직였거나 탑승/파손된 차량만 전송
+  const carList = [];
+  for (let i = 0; i < cars.length; i++) {
+    const c = cars[i];
+    if (c.mv || c.drv || c.pass.length > 0 || c.hp < 500) {
+      carList.push([i, +c.x.toFixed(1), +c.z.toFixed(1), +c.h.toFixed(2), Math.round(c.hp), c.drv, c.mv, Math.round(c.fuel), c.pass.slice()]);
+    }
+  }
   broadcast({
     t: 'snap', p: list, c: carList,
     z: [+zone.cx.toFixed(1), +zone.cz.toFixed(1), +zone.r.toFixed(1), +zone.ncx.toFixed(1), +zone.ncz.toFixed(1), +zone.nr.toFixed(1), zone.shrinking ? 1 : 0, Math.max(0, Math.ceil(zone.timer)), zone.phase],
