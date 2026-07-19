@@ -44,7 +44,7 @@ let dynIdx = 100000;         // 동적 아이템(투하/드랍) idx 시작
 let cars = [];
 function resetCars(){
   cars = [];
-  for (let i = 0; i < CAR_N; i++) cars.push({ hp: 500, fuel: 45, x: 0, z: 0, h: 0, drv: 0, dead: false, mv: 0 });
+  for (let i = 0; i < CAR_N; i++) cars.push({ hp: 500, fuel: 45, x: 0, z: 0, h: 0, drv: 0, dead: false, mv: 0, pass: [] });
 }
 resetCars();
 
@@ -94,7 +94,7 @@ wss.on('connection', (ws) => {
   players.set(id, p);
   send(p, {
     t: 'init', id, seed, spawn: [sx, sz], taken: [...taken],
-    cars: cars.map((c, i) => [i, +c.x.toFixed(1), +c.z.toFixed(1), +c.h.toFixed(2), Math.round(c.hp), c.drv, c.mv, Math.round(c.fuel)]),
+    cars: cars.map((c, i) => [i, +c.x.toFixed(1), +c.z.toFixed(1), +c.h.toFixed(2), Math.round(c.hp), c.drv, c.mv, Math.round(c.fuel), c.pass.slice()]),
     players: [...players.values()].filter(q => q.id !== id)
       .map(q => ({ id: q.id, name: q.name, x: q.x, y: q.y, z: q.z, yaw: q.yaw, stance: q.stance, hp: q.hp, alive: q.alive })),
   });
@@ -164,15 +164,27 @@ wss.on('connection', (ws) => {
     // ---------- 차량 ----------
     else if (m.t === 'carreq') {
       const c = cars[+m.idx];
-      if (!c || c.dead || c.drv) return;
-      c.drv = id;
-      broadcast({ t: 'carenter', idx: +m.idx, id });
+      if (!c || c.dead) return;
+      // 이미 다른 차에 탑승 중이면 무시
+      for (const cc of cars) if (cc.drv === id || cc.pass.includes(id)) return;
+      if (!c.drv) {
+        c.drv = id;
+        broadcast({ t: 'carenter', idx: +m.idx, id, role: 'd' });
+      } else if (c.pass.length < 3) {
+        c.pass.push(id);
+        broadcast({ t: 'carenter', idx: +m.idx, id, role: 'p' });
+      }
     }
     else if (m.t === 'carexit') {
       const c = cars[+m.idx];
-      if (!c || c.drv !== id) return;
-      c.drv = 0;
-      broadcast({ t: 'carexit', idx: +m.idx, id });
+      if (!c) return;
+      if (c.drv === id) {
+        c.drv = 0;
+        broadcast({ t: 'carexit', idx: +m.idx, id });
+      } else {
+        const k = c.pass.indexOf(id);
+        if (k >= 0) { c.pass.splice(k, 1); broadcast({ t: 'carexit', idx: +m.idx, id }); }
+      }
     }
     else if (m.t === 'carstate') {
       const c = cars[+m.idx];
@@ -188,9 +200,12 @@ wss.on('connection', (ws) => {
       if (c.hp <= 0) {
         c.hp = 0; c.dead = true;
         broadcast({ t: 'carboom', idx: +m.idx });
-        if (c.drv) {
-          const d = players.get(c.drv);
-          c.drv = 0;
+        const occ = [];
+        if (c.drv) occ.push(c.drv);
+        for (const pid of c.pass) occ.push(pid);
+        c.drv = 0; c.pass = [];
+        for (const oid of occ) {
+          const d = players.get(oid);
           if (d && d.alive) {
             d.hp = Math.max(6, Math.floor(d.hp * 0.5));
             broadcast({ t: 'hp', id: d.id, hp: Math.round(d.hp), armor: Math.round(d.armor) });
@@ -201,7 +216,11 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
-    for (const c of cars) if (c.drv === id) { c.drv = 0; }
+    for (const c of cars) {
+      if (c.drv === id) c.drv = 0;
+      const k = c.pass.indexOf(id);
+      if (k >= 0) c.pass.splice(k, 1);
+    }
     players.delete(id);
     broadcast({ t: 'pleave', id });
     console.log('[-] 퇴장: #' + id + ' (현재 ' + players.size + '명)');
@@ -218,7 +237,11 @@ function applyDamage(tgt, dmg, from, head, cause) {
   tgt.hp -= dmg;
   if (tgt.hp <= 0 && tgt.alive) {
     tgt.hp = 0; tgt.alive = false;
-    for (const c of cars) if (c.drv === tgt.id) c.drv = 0;
+    for (const c of cars) {
+      if (c.drv === tgt.id) c.drv = 0;
+      const k = c.pass.indexOf(tgt.id);
+      if (k >= 0) c.pass.splice(k, 1);
+    }
     if (from) from.kills++;
     broadcast({ t: 'kill', killer: from ? from.name : (cause || '전장'), victim: tgt.name, killerId: from ? from.id : 0, victimId: tgt.id, head: !!head });
     // 사망 지점 보급상자
@@ -313,7 +336,7 @@ setInterval(() => {
     [p.id, +p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2), +p.yaw.toFixed(3),
      p.stance === 'prone' ? 1 : 0, Math.round(p.hp), p.alive ? 1 : 0,
      p.helmet ? 1 : 0, p.bag, WIDX[p.w] || 0, Math.round(p.armor)]);
-  const carList = cars.map((c, i) => [i, +c.x.toFixed(1), +c.z.toFixed(1), +c.h.toFixed(2), Math.round(c.hp), c.drv, c.mv, Math.round(c.fuel)]);
+  const carList = cars.map((c, i) => [i, +c.x.toFixed(1), +c.z.toFixed(1), +c.h.toFixed(2), Math.round(c.hp), c.drv, c.mv, Math.round(c.fuel), c.pass.slice()]);
   broadcast({
     t: 'snap', p: list, c: carList,
     z: [+zone.cx.toFixed(1), +zone.cz.toFixed(1), +zone.r.toFixed(1), +zone.ncx.toFixed(1), +zone.ncz.toFixed(1), +zone.nr.toFixed(1), zone.shrinking ? 1 : 0, Math.max(0, Math.ceil(zone.timer)), zone.phase],

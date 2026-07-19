@@ -45,6 +45,9 @@
   #speedo .unit { font-size:13px; color:#bbb; }
   #speedo .fuel { font-size:14px; color:#ffb23d; }
   #speedo .carhp { font-size:14px; color:#7fdc7f; }
+  #castwrap { position:absolute; bottom:92px; left:50%; transform:translateX(-50%); width:260px; height:10px; background:rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.3); border-radius:3px; display:none; overflow:hidden; }
+  #castbar { height:100%; width:0%; background:#7fdc7f; }
+  #castlabel { position:absolute; bottom:106px; left:50%; transform:translateX(-50%); color:#bfe8bf; font-size:12px; text-shadow:0 1px 2px #000; display:none; }
   #stance { position:absolute; left:28px; bottom:80px; color:#ffd76a; font-size:13px; text-shadow:0 1px 3px #000; display:none; background:rgba(0,0,0,.4); padding:4px 10px; border-radius:4px; }
   #topbar { position:absolute; top:16px; left:50%; transform:translateX(-50%); display:flex; gap:10px; align-items:center; }
   .pill { background:rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.2); color:#fff; padding:6px 14px; border-radius:4px; font-size:14px; text-shadow:0 1px 2px #000; }
@@ -92,6 +95,7 @@
   <div id="killfeed"></div>
   <div id="minimapwrap"><canvas id="minimap" width="190" height="190"></canvas></div>
   <div id="invbar"></div>
+  <div id="castlabel"></div><div id="castwrap"><div id="castbar"></div></div>
   <div id="bottombar"><div id="armorwrap"><div id="armorbar"></div></div><div id="healthwrap"><div id="healthbar"></div></div></div>
   <div id="speedo">
     <div><span class="kmh" id="kmh">0</span> <span class="unit">km/h</span></div>
@@ -115,8 +119,8 @@
   <h1>BATTLE GROUNDS ONLINE</h1>
   <h2>2단계 — 파밍 · 무기 3종 · 수류탄 · 차량 · 보급 · 폭격</h2>
   <div class="controls">
-    <div><b>WASD</b> 이동 · <b>Shift</b> 달리기 · <b>Space</b> 점프 · <b>C</b> 엎드리기 · <b>E</b> 줍기 · <b>F</b> 차량</div>
-    <div><b>1~8</b> 소지품 · <b>Shift+1~8</b> 버리기 · <b>R</b> 재장전 · <b>G</b> 길게 눌러 수류탄</div>
+    <div><b>WASD</b> 이동 · <b>Shift</b> 달리기 ON/OFF · <b>Space</b> 점프 · <b>C</b> 엎드리기 · <b>E</b> 줍기 · <b>F</b> 차량(동승 4인)</div>
+    <div><b>1~8</b> 소지품 · <b>Shift+1~8</b> 버리기 · <b>R</b> 재장전 · <b>G</b> 수류탄 차징 · <b>T</b> 연막탄 차징</div>
     <div><b>좌클릭</b> 사격/주먹 · <b>우클릭</b> 조준 (Kar98k 8배율) · <b>V</b> 1/3인칭 · <b>M</b> 효과음</div>
     <div style="margin-top:6px;color:#aaa">— 모두 맨손 시작 · 같은 맵 파밍 경쟁 · 마지막 1인 승리 —</div>
   </div>
@@ -207,7 +211,7 @@ function collideEnt(nx,nz,rad,fy){
   }
   for(let i=0;i<cars.length;i++){
     const c=cars[i];
-    if(c===driving) continue;
+    if(c===driving||c===passengerCar) continue;
     if(Math.hypot(nx-c.mesh.position.x,nz-c.mesh.position.z)<1.9+rad){
       if(Math.abs(fy-c.mesh.position.y)<2.4) return true;
     }
@@ -611,6 +615,40 @@ function equip(slot){
   buildGun(slot?slot.wtype:null);
   updateHUD();renderInv();
 }
+// 배그식 회복 캐스팅
+let castT=0,castDur=0,castSlot=null,castLabel='';
+function startCast(sl,dur,label){
+  if(castT>0){announce('이미 사용 중입니다');return;}
+  castT=dur;castDur=dur;castSlot=sl;castLabel=label;
+  const cl=document.getElementById('castlabel');
+  cl.textContent=label+' 사용 중... (피격 시 취소)';
+  cl.style.display='block';
+  document.getElementById('castwrap').style.display='block';
+}
+function cancelCast(msg){
+  if(castT<=0)return;
+  castT=0;castSlot=null;
+  document.getElementById('castwrap').style.display='none';
+  document.getElementById('castlabel').style.display='none';
+  if(msg)announce(msg);
+}
+function updateCast(dt){
+  if(castT<=0)return;
+  castT-=dt;
+  document.getElementById('castbar').style.width=Math.max(0,100*(1-castT/castDur))+'%';
+  if(castT<=0){
+    const sl=castSlot;castSlot=null;
+    document.getElementById('castwrap').style.display='none';
+    document.getElementById('castlabel').style.display='none';
+    if(sl&&inventory.indexOf(sl)>=0){
+      if(sl.type==='med')sendHeal(50);
+      else if(sl.type==='bandage')sendHeal(15);
+      else if(sl.type==='medkit')sendHeal(100);
+      consume(sl);updateHUD();
+      announce(castLabel+' 사용 완료');
+    }
+  }
+}
 function consume(sl){
   sl.count--;
   if(sl.count<=0){const i=inventory.indexOf(sl);if(i>=0)inventory.splice(i,1);}
@@ -623,18 +661,16 @@ function useSlot(idx){
   if(sl.type==='ammo'){announce('탄약 '+sl.count+'발 — 재장전(R)에 사용');return;}
   if(sl.type==='med'){
     if(player.hp>=100){announce('체력이 가득 찼습니다');return;}
-    sendHeal(50);consume(sl);announce('구급상자 사용 (+50)');
+    startCast(sl,4,'구급상자');
   } else if(sl.type==='bandage'){
     if(player.hp>=100){announce('체력이 가득 찼습니다');return;}
-    sendHeal(15);consume(sl);announce('붕대 사용 (+15)');
+    startCast(sl,3,'붕대');
   } else if(sl.type==='medkit'){
-    sendHeal(100);consume(sl);announce('의료키트 — 완전 회복');
+    startCast(sl,6,'의료키트');
   } else if(sl.type==='drink'){
     sendHeal(25);player.boostT=20;consume(sl);announce('에너지드링크 (+25 · 20초 부스트)');
   } else if(sl.type==='smoke'){
-    if(driving){announce('운전 중에는 던질 수 없습니다');return;}
-    consume(sl);
-    throwNadeLocal('smoke',0.55);
+    announce('연막탄은 T키를 길게 눌러 투척합니다 (거리 조절)');
   } else if(sl.type==='grenade'){
     announce('수류탄은 G키를 길게 눌러 투척합니다');
   } else if(sl.type==='fuel'){
@@ -729,15 +765,18 @@ function makeCharModel(color){
   const bodyM=new THREE.MeshLambertMaterial({color});
   const torso=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.75,0.32),bodyM);torso.position.y=1.1;torso.userData.part='body';
   const head=new THREE.Mesh(new THREE.SphereGeometry(0.19,10,10),new THREE.MeshLambertMaterial({color:0xd9b38c}));head.position.y=1.68;head.userData.part='head';
-  const legs=new THREE.Mesh(new THREE.BoxGeometry(0.45,0.75,0.28),new THREE.MeshLambertMaterial({color:0x39424e}));legs.position.y=0.37;legs.userData.part='body';
+  const legMat=new THREE.MeshLambertMaterial({color:0x39424e});
+  const lgGeo=new THREE.BoxGeometry(0.19,0.78,0.26);lgGeo.translate(0,-0.39,0);
+  const legL=new THREE.Mesh(lgGeo,legMat);legL.position.set(-0.13,0.78,0);legL.userData.part='body';
+  const legR=new THREE.Mesh(lgGeo.clone(),legMat);legR.position.set(0.13,0.78,0);legR.userData.part='body';
   const armL=new THREE.Mesh(new THREE.BoxGeometry(0.14,0.6,0.14),bodyM);armL.position.set(-0.37,1.12,0);armL.userData.part='body';
   const armR=armL.clone();armR.position.x=0.37;
   const helmet=new THREE.Mesh(new THREE.SphereGeometry(0.215,10,8,0,Math.PI*2,0,Math.PI/2),new THREE.MeshLambertMaterial({color:0x4a5a3a}));helmet.position.y=1.7;helmet.visible=false;helmet.userData.part='head';
   const vest=new THREE.Mesh(new THREE.BoxGeometry(0.62,0.5,0.4),new THREE.MeshLambertMaterial({color:0x2a3d5a}));vest.position.y=1.15;vest.visible=false;vest.userData.part='body';
   const bag=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.6,0.28),new THREE.MeshLambertMaterial({color:0xb08d57}));bag.position.set(0,1.15,0.36);bag.visible=false;bag.userData.part='body';
   const gun=new THREE.Mesh(new THREE.BoxGeometry(0.07,0.09,0.75),new THREE.MeshLambertMaterial({color:0x222426}));gun.position.set(0.3,1.15,-0.35);gun.visible=false;gun.userData.part='body';
-  g.add(torso,head,legs,armL,armR,helmet,vest,bag,gun);
-  g.userData.eq={helmet,vest,bag,gun};
+  g.add(torso,head,legL,legR,armL,armR,helmet,vest,bag,gun);
+  g.userData.eq={helmet,vest,bag,gun,legL,legR};
   g.traverse(o=>{o.castShadow=true;});
   return g;
 }
@@ -795,10 +834,10 @@ function removeRemote(id){
   const r=remotes.get(id);if(!r)return;
   scene.remove(r.group);remotes.delete(id);
 }
-function updateRemotes(){
+function updateRemotes(dt){
   const renderT=performance.now()-120;
   for(const r of remotes.values()){
-    const inCar=carsByDriver.get(r.id);
+    const inCar=occByPlayer.get(r.id);
     r.group.visible=r.alive&&!inCar;
     if(!r.group.visible)continue;
     const b=r.buf;
@@ -817,6 +856,12 @@ function updateRemotes(){
     }
     const crawl=r.hp>0&&r.hp<20;
     const eyeOff=(r.stance==='prone'||crawl)?EYE_PRONE:EYE_STAND;
+    const spd=Math.hypot(x-(r.lx===undefined?x:r.lx),z-(r.lz===undefined?z:r.lz))/Math.max(0.001,dt);
+    r.lx=x;r.lz=z;
+    r.walkT=(r.walkT||0)+Math.min(spd,11)*dt*1.7;
+    const sw=(spd>0.6&&!(r.stance==='prone'||crawl))?Math.sin(r.walkT)*0.55:0;
+    const eqR=r.group.userData.eq;
+    eqR.legL.rotation.x=sw;eqR.legR.rotation.x=-sw;
     r.group.position.set(x,y-eyeOff,z);
     r.group.rotation.y=yaw;
     r.group.scale.y=(r.stance==='prone'||crawl)?0.5:1;
@@ -826,8 +871,8 @@ function updateRemotes(){
 
 // ================= 차량 =================
 const cars=[];
-const carsByDriver=new Map(); // driverId -> car
-let driving=null;
+const occByPlayer=new Map(); // driverId -> car
+let driving=null,passengerCar=null;
 const carColors=[0xc9a34a,0x5a7a9a,0x9a5a5a,0x5a9a6a,0x9a9a9a];
 const wreckMat=new THREE.MeshLambertMaterial({color:0x1c1c1c});
 function makeCarMesh(x,z,heading,idx){
@@ -846,11 +891,15 @@ function makeCarMesh(x,z,heading,idx){
     w.rotation.z=Math.PI/2;w.position.set(p[0],0.42,p[1]);
     w.castShadow=true;g.add(w);wheels.push(w);
   });
-  const headMark=new THREE.Mesh(new THREE.SphereGeometry(0.17,8,8),new THREE.MeshLambertMaterial({color:0xd9b38c}));
-  headMark.position.set(-0.45,2.15,0.3);headMark.visible=false;g.add(headMark);
+  const seatMarks=[];
+  [[-0.45,2.15,0.3],[0.45,2.15,0.3],[-0.45,2.15,-0.9],[0.45,2.15,-0.9]].forEach(sp=>{
+    const mk=new THREE.Mesh(new THREE.SphereGeometry(0.17,8,8),new THREE.MeshLambertMaterial({color:0xd9b38c}));
+    mk.position.set(sp[0],sp[1],sp[2]);mk.visible=false;g.add(mk);
+    seatMarks.push(mk);
+  });
   g.position.set(x,terrainH(x,z),z);
   scene.add(g);
-  const car={idx,mesh:g,body,cabin,wheels,headMark,speed:0,heading,hp:500,fuel:45,dead:false,drv:0,tx:x,tz:z,th:heading};
+  const car={idx,mesh:g,body,cabin,wheels,seatMarks,pass:[],speed:0,heading,hp:500,fuel:45,dead:false,drv:0,tx:x,tz:z,th:heading};
   body.userData.carRef=car;cabin.userData.carRef=car;
   solids.push(body);
   cars.push(car);
@@ -870,13 +919,19 @@ function updateCarPose(car){
   car.mesh.rotation.y=car.heading;
   car.mesh.rotation.x=clamp(Math.atan2(hB-hF,2*L),-0.45,0.45);
   car.mesh.rotation.z=clamp(Math.atan2(hL-hR,2*W),-0.45,0.45);
-  car.headMark.visible=car.drv>0&&!car.dead;
-  car.headMark.material.color.setHex(car.drv===myId?0xffd76a:0xd9b38c);
+  for(let i=0;i<4;i++){
+    const oid=i===0?(car.drv||0):((car.pass&&car.pass[i-1])||0);
+    const mk=car.seatMarks[i];
+    mk.visible=oid>0&&!car.dead;
+    if(oid>0)mk.material.color.setHex(oid===myId?0xffd76a:0xd9b38c);
+  }
 }
 function nearestCar(maxD){
   let best=null,bd=maxD||3.8;
   for(const c of cars){
-    if(c.dead||c.drv)continue;
+    if(c.dead)continue;
+    if(c.drv&&c.pass.length>=3)continue; // 4인 만석
+    if(c.drv===myId||c.pass.includes(myId))continue;
     const d=Math.hypot(c.mesh.position.x-player.pos.x,c.mesh.position.z-player.pos.z);
     if(d<bd){bd=d;best=c;}
   }
@@ -891,6 +946,29 @@ function wreckCar(car){
     exitCarLocal(false);
     announce('🔥 차량 폭발! 긴급 탈출 — 체력 절반 감소');
   }
+  if(passengerCar===car){
+    exitPassengerLocal(false);
+    announce('🔥 차량 폭발! 긴급 탈출 — 체력 절반 감소');
+  }
+}
+function enterPassengerLocal(car){
+  passengerCar=car;
+  car.cabin.visible=(viewMode==='tps');
+  if(player.stance==='prone'){player.stance='stand';document.getElementById('stance').style.display='none';}
+  announce('🚗 동승! 좌석에서 사격 가능 — F로 하차');
+}
+function exitPassengerLocal(sendMsg){
+  const c=passengerCar;
+  if(!c)return;
+  if(sendMsg&&ws&&ws.readyState===1)ws.send(JSON.stringify({t:'carexit',idx:c.idx}));
+  c.cabin.visible=true;
+  const rx=Math.cos(c.heading),rz=-Math.sin(c.heading);
+  let ex=c.mesh.position.x+rx*2.4,ez=c.mesh.position.z+rz*2.4;
+  if(collideEnt(ex,ez,0.4,terrainH(ex,ez))){ex=c.mesh.position.x-rx*2.4;ez=c.mesh.position.z-rz*2.4;}
+  player.pos.set(ex,terrainH(ex,ez)+EYE_STAND,ez);
+  const k=c.pass.indexOf(myId);
+  if(k>=0)c.pass.splice(k,1);
+  passengerCar=null;
 }
 function enterCarLocal(car){
   driving=car;ads=false;
@@ -952,7 +1030,7 @@ function updateDriving(dt){
   // 로드킬
   if(Math.abs(c.speed)>4.5){
     for(const r of remotes.values()){
-      if(!r.alive||carsByDriver.get(r.id))continue;
+      if(!r.alive||occByPlayer.get(r.id))continue;
       if(Math.hypot(r.group.position.x-nx,r.group.position.z-nz)<2.4){
         if(ws&&ws.readyState===1)ws.send(JSON.stringify({t:'hit',target:r.id,w:'car',head:false}));
         c.speed*=0.7;
@@ -1050,9 +1128,8 @@ function nadeVel(power){
 }
 function throwNadeLocal(kind,power){
   const o=player.pos.clone().add(new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).multiplyScalar(0.6));
-  const v=kind==='smoke'
-    ? new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).multiplyScalar(14).add(new THREE.Vector3(0,3.5,0))
-    : nadeVel(power);
+  const v=nadeVel(power);
+  if(kind==='smoke')v.multiplyScalar(0.9);
   spawnNade(kind,o,v,true);
   if(ws&&ws.readyState===1)ws.send(JSON.stringify({t:'nade',kind,o:[+o.x.toFixed(1),+o.y.toFixed(1),+o.z.toFixed(1)],v:[+v.x.toFixed(2),+v.y.toFixed(2),+v.z.toFixed(2)]}));
 }
@@ -1102,7 +1179,7 @@ function updateGrenades(dt){
   }
 }
 // 수류탄 차징
-let nadeCharge=-1;
+let nadeCharge=-1,chargeKind='frag';
 const trajGeo=new THREE.BufferGeometry();
 const trajLine=new THREE.Line(trajGeo,new THREE.LineBasicMaterial({color:0xffe9a3,transparent:true,opacity:0.85}));
 trajLine.visible=false;trajLine.frustumCulled=false;scene.add(trajLine);
@@ -1122,7 +1199,7 @@ function simThrow(power){
 }
 function updateNadeCharge(dt){
   if(nadeCharge<0)return;
-  if(!inventory.some(s=>s.type==='grenade')||driving){cancelNade();return;}
+  if(!inventory.some(s=>s.type===(chargeKind==='frag'?'grenade':'smoke'))||driving){cancelNade();return;}
   nadeCharge=Math.min(1,nadeCharge+dt/1.2);
   const pts=simThrow(nadeCharge);
   trajGeo.setFromPoints(pts);
@@ -1160,10 +1237,11 @@ function connect(){
       for(const ca of (m.cars||[])){
         const c=cars[ca[0]];
         if(!c)continue;
-        c.hp=ca[4];c.drv=ca[5];c.fuel=ca[7];
+        c.hp=ca[4];c.drv=ca[5];c.fuel=ca[7];c.pass=(ca[8]||[]).slice();
+        for(const pid of c.pass)occByPlayer.set(pid,c);
         if(ca[6]){c.mesh.position.x=ca[1];c.mesh.position.z=ca[2];c.heading=ca[3];c.tx=ca[1];c.tz=ca[2];c.th=ca[3];updateCarPose(c);}
         if(c.hp<=0)wreckCar(c);
-        if(c.drv)carsByDriver.set(c.drv,c);
+        if(c.drv)occByPlayer.set(c.drv,c);
       }
       player.pos.set(m.spawn[0],terrainH(m.spawn[0],m.spawn[1])+EYE_STAND,m.spawn[1]);
       for(const q of m.players){const r=addRemote(q.id,q.name,q.x,q.y,q.z);r.hp=q.hp;r.alive=!!q.alive;r.stance=q.stance;}
@@ -1171,7 +1249,14 @@ function connect(){
     }
     else if(m.t==='pjoin'){addRemote(m.id,m.name,0,3,0);addFeedRaw(m.name+' 님이 전장에 입장');}
     else if(m.t==='pname'){renameRemote(m.id,m.name);}
-    else if(m.t==='pleave'){const r=remotes.get(m.id);if(r)addFeedRaw(r.name+' 님이 퇴장');removeRemote(m.id);}
+    else if(m.t==='pleave'){
+      const r=remotes.get(m.id);
+      if(r)addFeedRaw(r.name+' 님이 퇴장');
+      removeRemote(m.id);
+      const oc=occByPlayer.get(m.id);
+      if(oc){if(oc.drv===m.id)oc.drv=0;const pk2=oc.pass.indexOf(m.id);if(pk2>=0)oc.pass.splice(pk2,1);}
+      occByPlayer.delete(m.id);
+    }
     else if(m.t==='snap'){
       const now=performance.now();
       let aliveN=0;
@@ -1186,13 +1271,16 @@ function connect(){
         r.hp=hp;r.alive=!!alive;
         r.helmet=helmet;r.bag=bag;r.wIdx=wIdx;r.armor=armor;
       }
-      carsByDriver.clear();
+      occByPlayer.clear();
       for(const ca of (m.c||[])){
         const c=cars[ca[0]];
         if(!c)continue;
         c.hp=Math.min(c.hp,ca[4]);
         c.drv=ca[5];
-        if(c.drv)carsByDriver.set(c.drv,c);
+        c.pass=(ca[8]||[]).slice();
+        if(c.drv)occByPlayer.set(c.drv,c);
+        for(const pid of c.pass)occByPlayer.set(pid,c);
+        if(passengerCar===c&&!c.pass.includes(myId))passengerCar=null;
         if(c!==driving&&ca[6]){c.tx=ca[1];c.tz=ca[2];c.th=ca[3];}
         if(ca[4]<=0&&!c.dead)wreckCar(c);
       }
@@ -1231,6 +1319,16 @@ function connect(){
     }
     else if(m.t==='shot'){
       if(m.o&&m.e)spawnTracerArr(m.o,m.e);
+      if(m.o){
+        // 다른 플레이어의 총구 화염을 모두가 볼 수 있게
+        const fxL=new THREE.PointLight(0xffcc66,2.4,11);
+        fxL.position.set(m.o[0],m.o[1],m.o[2]);
+        scene.add(fxL);
+        const fxM=new THREE.Mesh(new THREE.SphereGeometry(0.15,6,6),new THREE.MeshBasicMaterial({color:0xffd98a,transparent:true,opacity:0.95}));
+        fxM.position.copy(fxL.position);
+        scene.add(fxM);
+        setTimeout(()=>{scene.remove(fxL);scene.remove(fxM);},110);
+      }
       const r=remotes.get(m.id);
       if(r){
         const d=Math.hypot(r.group.position.x-player.pos.x,r.group.position.z-player.pos.z);
@@ -1243,16 +1341,26 @@ function connect(){
     else if(m.t==='carenter'){
       const c=cars[m.idx];
       if(!c)return;
-      c.drv=m.id;
-      carsByDriver.set(m.id,c);
-      if(m.id===myId)enterCarLocal(c);
+      if(m.role==='p'){
+        if(!c.pass.includes(m.id))c.pass.push(m.id);
+      } else {
+        c.drv=m.id;
+      }
+      occByPlayer.set(m.id,c);
+      if(m.id===myId){
+        if(m.role==='p')enterPassengerLocal(c);
+        else enterCarLocal(c);
+      }
       updateCarPose(c);
     }
     else if(m.t==='carexit'){
       const c=cars[m.idx];
       if(!c)return;
       if(c.drv===m.id)c.drv=0;
-      carsByDriver.delete(m.id);
+      const pk=c.pass.indexOf(m.id);
+      if(pk>=0)c.pass.splice(pk,1);
+      occByPlayer.delete(m.id);
+      if(m.id===myId&&passengerCar===c)passengerCar=null;
       updateCarPose(c);
     }
     else if(m.t==='carboom'){
@@ -1264,6 +1372,7 @@ function connect(){
         if(m.hp<player.hp){
           const f=document.getElementById('dmgflash');
           f.style.opacity=1;setTimeout(()=>f.style.opacity=0,220);
+          cancelCast('피격으로 회복 취소!');
         }
         player.hp=m.hp;
         armorLocal=m.armor!==undefined?m.armor:armorLocal;
@@ -1281,6 +1390,7 @@ function connect(){
       if(m.victimId===myId){
         player.dead=true;player.hp=0;updateHUD();
         if(driving)exitCarLocal(true);
+        if(passengerCar)exitPassengerLocal(true);
         document.getElementById('deadoverlay').style.display='block';
         document.getElementById('deadinfo').textContent=m.killer+'에게 당했습니다 · 처치 '+player.kills;
         document.exitPointerLock();
@@ -1362,6 +1472,7 @@ function playHit(){
 const keys={};
 let locked=false,started=false;
 let mouseDown=false,ads=false,fireCooldown=0,reloading=0,meleeCd=0;
+let sprintOn=false,shiftUsed=false;
 document.getElementById('startbtn').addEventListener('click',()=>{
   const inp=document.getElementById('nameinput');
   myName=(inp.value||'').trim().slice(0,12)||('전사'+Math.floor(Math.random()*999));
@@ -1399,6 +1510,7 @@ document.addEventListener('mouseup',e=>{
 document.addEventListener('contextmenu',e=>e.preventDefault());
 document.addEventListener('keydown',e=>{
   keys[e.code]=true;
+  if(e.code==='ShiftLeft'&&!e.repeat)shiftUsed=false;
   if(player.dead)return;
   if(e.code==='KeyR'&&!driving)startReload();
   if(e.code==='KeyC'&&!driving&&player.hp>=20){
@@ -1407,8 +1519,12 @@ document.addEventListener('keydown',e=>{
   if(e.code==='KeyE'&&!driving)tryPickup();
   if(e.code==='KeyF')toggleVehicle();
   if(e.code==='KeyG'&&!driving&&!e.repeat){
-    if(inventory.some(s=>s.type==='grenade'))nadeCharge=0;
+    if(inventory.some(s=>s.type==='grenade')){nadeCharge=0;chargeKind='frag';}
     else announce('수류탄이 없습니다');
+  }
+  if(e.code==='KeyT'&&!driving&&!e.repeat){
+    if(inventory.some(s=>s.type==='smoke')){nadeCharge=0;chargeKind='smoke';}
+    else announce('연막탄이 없습니다');
   }
   if(e.code==='KeyV'){
     viewMode=viewMode==='fps'?'tps':'fps';
@@ -1422,19 +1538,25 @@ document.addEventListener('keydown',e=>{
       if(driving){
         const sl=inventory[n-1];
         if(sl&&sl.type==='fuel')useSlot(n-1);
-      } else if(e.shiftKey)dropSlot(n-1);
+      } else if(e.shiftKey){shiftUsed=true;dropSlot(n-1);}
       else useSlot(n-1);
     }
   }
 });
 document.addEventListener('keyup',e=>{
   keys[e.code]=false;
-  if(e.code==='KeyG'&&nadeCharge>=0){
+  if(e.code==='ShiftLeft'&&!player.dead&&!shiftUsed){
+    sprintOn=!sprintOn;
+    announce(sprintOn?'🏃 달리기 ON (Shift로 끄기)':'🚶 걷기 모드 (Shift로 달리기)');
+  }
+  if((e.code==='KeyG'||e.code==='KeyT')&&nadeCharge>=0){
+    const kind=e.code==='KeyG'?'frag':'smoke';
+    if(kind!==chargeKind)return;
     const p=nadeCharge;
     cancelNade();
     if(!player.dead){
-      const sl=inventory.find(s=>s.type==='grenade');
-      if(sl){consume(sl);throwNadeLocal('frag',p);}
+      const sl=inventory.find(s=>s.type===(kind==='frag'?'grenade':'smoke'));
+      if(sl){consume(sl);throwNadeLocal(kind,p);}
     }
   }
 });
@@ -1448,6 +1570,7 @@ function startReload(){
 }
 function toggleVehicle(){
   if(driving){exitCarLocal(true);}
+  else if(passengerCar){exitPassengerLocal(true);}
   else{
     const c=nearestCar(3.8);
     if(!c)return;
@@ -1464,7 +1587,7 @@ function updateItems(dt){
   for(const [idx,it] of itemsByIdx){
     it.mesh.rotation.y=t;
     it.mesh.position.y=it.gy+0.35+Math.sin(t*2+it.x)*0.06;
-    if(!driving){
+    if(!driving&&!passengerCar){
       const d=Math.hypot(it.x-player.pos.x,it.z-player.pos.z);
       if(d<bestD&&Math.abs(it.gy-(player.pos.y-player.eyeCur))<2.2){bestD=d;nearItemIdx=idx;}
     }
@@ -1473,6 +1596,9 @@ function updateItems(dt){
   if(driving){
     hint.style.display='block';
     hint.innerHTML='<b>F</b> 하차'+(driving.fuel<=1?' · ⛽ 연료 없음! 기름통 슬롯 숫자키':'');
+  } else if(passengerCar){
+    hint.style.display='block';
+    hint.innerHTML='<b>F</b> 하차 · 좌석에서 사격 가능!';
   } else if(nearItemIdx>=0){
     const it=itemsByIdx.get(nearItemIdx);
     hint.style.display='block';
@@ -1503,7 +1629,7 @@ function meleeAttack(){
   playNoise(0.1,0.08,900);
   const dir=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
   for(const r of remotes.values()){
-    if(!r.alive||carsByDriver.get(r.id))continue;
+    if(!r.alive||occByPlayer.get(r.id))continue;
     const to=r.group.position.clone().add(new THREE.Vector3(0,1.1,0)).sub(player.pos);
     const d=to.length();
     if(d<2.6&&to.normalize().dot(dir)>0.55){
@@ -1582,11 +1708,38 @@ function applyFov(dt){
   camera.fov+=(targetFov-camera.fov)*Math.min(1,dt*10);
   camera.updateProjectionMatrix();
   document.getElementById('scope').style.display=(scoped&&camera.fov<30)?'block':'none';
-  gunGroup.visible=!driving&&!!heldWeapon&&!(scoped&&camera.fov<30)&&viewMode==='fps';
+  gunGroup.visible=!driving&&!!heldWeapon&&!(scoped&&camera.fov<30)&&viewMode==='fps'&&!player.dead;
   document.getElementById('crosshair').style.opacity=(scoped||driving)?0:(ads?0.4:1);
+}
+function updatePassenger(dt){
+  const c=passengerCar;
+  const seatIdx=Math.max(0,c.pass.indexOf(myId));
+  const seats=[[0.45,1.85,0.1],[-0.45,1.85,-0.9],[0.45,1.85,-0.9]];
+  const st=seats[Math.min(seatIdx,2)];
+  const sx=c.mesh.position.x+st[0]*Math.cos(c.heading)+st[2]*Math.sin(c.heading);
+  const sz=c.mesh.position.z-st[0]*Math.sin(c.heading)+st[2]*Math.cos(c.heading);
+  player.pos.set(sx,c.mesh.position.y+st[1],sz);
+  camera.rotation.set(0,0,0);
+  camera.rotateY(player.yaw);
+  camera.rotateX(player.pitch);
+  if(viewMode==='tps'){
+    const vdir=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+    const ax=c.mesh.position.x,ay=c.mesh.position.y+2.0,az=c.mesh.position.z;
+    let camDist=7.5;
+    tpsRay.set(new THREE.Vector3(ax,ay,az),vdir.clone().multiplyScalar(-1));
+    tpsRay.far=camDist;
+    const hh=tpsRay.intersectObjects(solids,false);
+    if(hh.length>0)camDist=Math.max(1.5,hh[0].distance-0.4);
+    let cpx=ax-vdir.x*camDist,cpy=ay-vdir.y*camDist+0.6,cpz=az-vdir.z*camDist;
+    const tg2=terrainH(cpx,cpz)+0.4;
+    if(cpy<tg2)cpy=tg2;
+    camera.position.set(cpx,cpy,cpz);
+  } else camera.position.copy(player.pos);
+  applyFov(dt);
 }
 function updatePlayer(dt){
   if(player.dead||!worldBuilt)return;
+  if(passengerCar){updatePassenger(dt);return;}
   if(driving){updateDriving(dt);return;}
   const crawl=player.hp>0&&player.hp<20;
   const prone=player.stance==='prone'||crawl;
@@ -1597,7 +1750,7 @@ function updatePlayer(dt){
   player.eyeCur+=(targetEye-player.eyeCur)*Math.min(1,dt*10);
   const eye=player.eyeCur;
   if(player.boostT>0){player.boostT-=dt;}
-  let speed=keys['ShiftLeft']&&!prone&&!ads?9.2:5.2;
+  let speed=sprintOn&&!prone&&!ads?9.2:5.2;
   if(prone)speed*=0.35;
   if(ads)speed*=0.6;
   if(player.boostT>0)speed*=1.12;
@@ -1638,7 +1791,7 @@ function updatePlayer(dt){
     if(player.pos.y-gY>0.9){player.onGround=false;player.velY=0;}
     else player.pos.y+=(gY-player.pos.y)*Math.min(1,dt*14);
   }
-  if(len>0&&player.onGround)bobT+=dt*(keys['ShiftLeft']&&!prone?11:7);
+  if(len>0&&player.onGround)bobT+=dt*(sprintOn&&!prone?11:7);
   const bob=Math.sin(bobT)*(prone?0.012:0.03)*(len>0?1:0);
   camera.position.copy(player.pos);
   camera.position.y+=bob;
@@ -1670,6 +1823,9 @@ function updatePlayer(dt){
     playerModel.position.set(player.pos.x,player.pos.y-player.eyeCur,player.pos.z);
     playerModel.rotation.y=player.yaw;
     playerModel.scale.y=prone?0.5:1;
+    const eqP=playerModel.userData.eq;
+    const swP=(len>0&&player.onGround&&!prone)?Math.sin(bobT*2)*0.55:0;
+    eqP.legL.rotation.x=swP;eqP.legR.rotation.x=-swP;
     applyGearToModel(playerModel,hasHelmet,armorLocal,bagLevel,heldWeapon?WNAME2IDX[heldWeapon.wtype]:0);
   }
 }
@@ -1892,9 +2048,9 @@ function loop(now){
   const dt=Math.min(0.05,(now-last)/1000);
   last=now;
   if(started){
-    updatePlayer(dt);
-    updateRemotes();
     updateRemoteCars(dt);
+    updatePlayer(dt);
+    updateRemotes(dt);
     updateZoneClient(dt);
     updateItems(dt);
     updateGrenades(dt);
@@ -1903,6 +2059,7 @@ function loop(now){
     updateRedzone(dt);
     updateSmokes(dt);
     updateRain(dt);
+    updateCast(dt);
     fireCooldown-=dt;
     meleeCd-=dt;
     if(mouseDown&&heldWeapon&&WEAPONS[heldWeapon.wtype].auto)tryFire();
