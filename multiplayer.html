@@ -428,7 +428,13 @@ function insideBld(x,z,m){
   return false;
 }
 
+let worldObjects=[]; // 재생성 시 제거할 씬 객체 추적
+const _origSceneAdd=scene.add.bind(scene);
+let _trackAdds=false;
+function trackAdd(obj){ if(_trackAdds) worldObjects.push(obj); return _origSceneAdd(obj); }
 function buildWorld(){
+  _trackAdds=true; // 이 함수 동안 scene.add되는 것 추적
+  scene.add=trackAdd;
   sr=mulberry32(SEED);
   mountainDefs=[];
   for(let i=0;i<5;i++){
@@ -539,7 +545,25 @@ function buildWorld(){
   buildCars();
   buildMinimapBg();
   buildPlane();
+  scene.add=_origSceneAdd; _trackAdds=false;
   worldBuilt=true;
+}
+function rebuildWorld(){
+  // 기존 월드 씬 객체 제거
+  for(const o of worldObjects){ try{ scene.remove(o); }catch(e){} }
+  worldObjects=[];
+  // 전역 배열/맵 비우기
+  obstacles.length=0; solids.length=0; platforms.length=0; ramps.length=0;
+  mmBuildings.length=0; itemSpawnQueue.length=0; carSpawns.length=0;
+  cars.length=0;
+  for(const [idx,it] of itemsByIdx){ try{ scene.remove(it.mesh); }catch(e){} }
+  itemsByIdx.clear();
+  takenSet=new Set();
+  occByPlayer.clear();
+  driving=null; passengerCar=null;
+  planeGrp=null; planeT=0;
+  worldBuilt=false;
+  buildWorld();
 }
 
 // ================= 아이템 =================
@@ -1410,11 +1434,6 @@ const zoneS={cx:0,cz:0,r:MAP_HALF,ncx:0,ncz:0,nr:0,shrinking:false,timer:0,phase
 const airdropsFalling=[];
 const redzone={active:false,x:0,z:0,r:70,t:0,boomT:0};
 function sendHeal(amt){if(ws&&ws.readyState===1)ws.send(JSON.stringify({t:'heal',amt}));}
-let autoStart=null;
-try{
-  const as=sessionStorage.getItem('bg_autostart');
-  if(as){ autoStart=JSON.parse(as); sessionStorage.removeItem('bg_autostart'); }
-}catch(e){}
 function connect(){
   const url=location.origin.replace(/^http/,'ws');
   document.getElementById('connstatus').textContent='서버 접속 중...';
@@ -1445,12 +1464,11 @@ function connect(){
       player.pos.set(m.spawn[0],terrainH(m.spawn[0],m.spawn[1])+EYE_STAND,m.spawn[1]);
       for(const q of m.players){const r=addRemote(q.id,q.name,q.x,q.y,q.z);r.hp=q.hp;r.alive=!!q.alive;r.stance=q.stance;if(q.color!==undefined)setRemoteColor(r,q.color);}
       netReady=true;
-      // 자동 재시작(라운드 시작 리로드)인 경우: 바로 수송기 강하로 진입
-      if(autoStart && autoStart.seed===SEED){
+      // 접속 시 이미 게임 중이면: 대기실은 건너뛰고 관전+강하 대기 (다음 판 자동 합류)
+      if(gameState==='playing'){
+        announce('게임 진행 중 — 함께 시작합니다');
         started=true;
         beginMatch();
-      } else if(gameState==='playing'){
-        announce('현재 게임 진행 중 — 다음 라운드에 합류합니다');
       }
     }
     else if(m.t==='pjoin'){const r=addRemote(m.id,m.name,0,3,0);if(m.color!==undefined)setRemoteColor(r,m.color);}
@@ -1466,20 +1484,23 @@ function connect(){
       if(r)setRemoteColor(r,m.color);
     }
     else if(m.t==='start'){
-      // 새 시드로 게임 시작. 깨끗한 상태 보장을 위해 정보 저장 후 자동 재시작
-      try{
-        sessionStorage.setItem('bg_autostart', JSON.stringify({seed:m.seed, name:myName, color:myColor}));
-        localStorage.setItem('bg_name', myName);
-      }catch(e){}
-      location.reload();
+      gameState='playing';
+      // 서버 시드와 내 월드 시드가 다르면(늦게 합류 등) 새로 만든다
+      if(m.seed!==undefined && m.seed!==SEED){ SEED=m.seed; rebuildWorld(); }
+      beginMatch();
     }
     else if(m.t==='tolobby'){
       gameState='lobby';
-      // 게임 정리 후 대기실로
-      player.dead=false;
+      player.dead=false; player.hp=100;
       document.getElementById('deadoverlay').style.display='none';
       document.exitPointerLock();
       started=false;
+      dropPhase='lobby';
+      // 다음 판 새 맵 준비
+      if(m.seed!==undefined && m.seed!==SEED){ SEED=m.seed; rebuildWorld(); }
+      // 준비 버튼 초기화
+      const rb=document.getElementById('readybtn');
+      if(rb){ rb.dataset.on='0'; rb.textContent='준비 완료'; rb.style.background='#5ad06a'; }
       enterLobby();
       announce('대기실로 돌아왔습니다 — 다시 준비하세요');
     }
@@ -1801,12 +1822,6 @@ function beginMatch(){
   announce('✈ 수송기 이륙! Space로 원하는 지점에서 강하');
 }
 try{const saved=localStorage.getItem('bg_name');if(saved)document.getElementById('nameinput').value=saved;}catch(e){}
-// 라운드 재시작에 의한 리로드면 자동으로 접속+게임 진입
-if(autoStart){
-  myName=autoStart.name||('전사'+Math.floor(Math.random()*999));
-  myColor=autoStart.color||0;
-  connect();
-}
 canvas.addEventListener('click',()=>{if(started&&!player.dead)canvas.requestPointerLock();});
 document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===canvas;});
 document.addEventListener('mousemove',e=>{

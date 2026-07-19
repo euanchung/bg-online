@@ -96,7 +96,7 @@ function sendLobby() {
 function startMatch() {
   gameState = 'playing';
   roundActive = true;
-  seed = Math.floor(Math.random() * 1e9);
+  // seed는 그대로 유지 — 모든 접속자가 init에서 이미 같은 seed로 월드를 만들었음
   resetZone(); resetCars();
   taken = new Set();
   planeStartAt = Date.now();
@@ -312,13 +312,14 @@ function endMatch(winnerName, winnerKills) {
   setTimeout(() => {
     gameState = 'lobby';
     roundActive = false;
+    seed = Math.floor(Math.random() * 1e9); // 다음 판은 새 맵
     resetZone(); resetCars();
     taken = new Set();
     for (const q of players.values()) {
       q.hp = 100; q.armor = 0; q.helmet = false; q.bag = 0; q.w = '';
       q.alive = true; q.kills = 0; q.ready = false; q.d = 0;
     }
-    broadcast({ t: 'tolobby' });
+    broadcast({ t: 'tolobby', seed });
     sendLobby();
     console.log('[대기실] 복귀 완료');
   }, 6000);
