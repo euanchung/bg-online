@@ -118,16 +118,28 @@
 </div>
 <div class="screen" id="startscreen">
   <h1>BATTLE GROUNDS ONLINE</h1>
-  <h2>2단계 — 파밍 · 무기 3종 · 수류탄 · 차량 · 보급 · 폭격</h2>
+  <h2>대기실 · 모두 준비되면 함께 출발</h2>
   <div class="controls">
-    <div><b>WASD</b> 이동 · <b>Shift</b> 달리기 ON/OFF · <b>Space</b> 점프 · <b>C</b> 엎드리기 · <b>E</b> 줍기 · <b>F</b> 차량(동승 4인)</div>
-    <div><b>1~8</b> 소지품 · <b>Shift+1~8</b> 버리기 · <b>R</b> 재장전 · <b>G</b> 수류탄 차징 · <b>T</b> 연막탄 차징</div>
+    <div><b>WASD</b> 이동 · <b>Shift</b> 달리기 ON/OFF · <b>Space</b> 강하/점프 · <b>C</b> 엎드리기 · <b>E</b> 줍기 · <b>F</b> 차량(동승 4인)</div>
+    <div><b>1~8</b> 소지품 · <b>Shift+1~8</b> 버리기 · <b>R</b> 재장전 · <b>G</b> 수류탄 · <b>T</b> 연막탄 · <b>N</b> 화염병</div>
     <div><b>좌클릭</b> 사격/주먹 · <b>우클릭</b> 조준 (Kar98k 8배율) · <b>V</b> 1/3인칭 · <b>M</b> 효과음</div>
-    <div style="margin-top:6px;color:#aaa">— ✈ 수송기에서 Space로 강하 → 낙하산 착지 → 파밍 경쟁 · 마지막 1인 승리 —</div>
   </div>
   <div id="connstatus"></div>
   <input id="nameinput" maxlength="12" placeholder="닉네임 입력">
-  <button class="bigbtn" id="startbtn">전장 진입</button>
+  <button class="bigbtn" id="startbtn">대기실 입장</button>
+</div>
+
+<div class="screen" id="lobbyscreen" style="display:none">
+  <h1>✈ 대기실</h1>
+  <h2 id="lobbysub">수송기 출발 대기 중 — 모두 준비되면 시작</h2>
+  <div id="lobbylist" style="display:flex; flex-direction:column; gap:8px; margin-bottom:18px; min-width:340px; max-height:38vh; overflow-y:auto;"></div>
+  <div style="margin-bottom:10px; color:#cbd5e1; font-size:13px;">내 아바타 색상</div>
+  <div id="colorpicker" style="display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap; justify-content:center; max-width:420px;"></div>
+  <div style="display:flex; gap:12px;">
+    <button class="bigbtn" id="readybtn" style="background:#5ad06a; box-shadow:0 4px 0 #2f8a3c;">준비 완료</button>
+    <button class="bigbtn" id="startmatchbtn" style="background:#ffd76a;">전원 출발!</button>
+  </div>
+  <div style="margin-top:14px; color:#8aa; font-size:12px;">‘전원 출발’을 누르면 수송기가 이륙하고 모두 동시에 시작합니다</div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -179,6 +191,7 @@ const obstacles=[],solids=[],platforms=[],ramps=[];
 let mountainDefs=[],townDefs=[],flats=[],flatH=[];
 const mmBuildings=[];
 let worldBuilt=false;
+let gameState='lobby';
 const itemSpawnQueue=[];
 const carSpawns=[];
 
@@ -230,6 +243,22 @@ function depenetrate(px,pz,rad,fy){
     }
   }
   return [px,pz];
+}
+function segBlocked(ax,az,bx,bz,fy){
+  // 두 지점 사이에 벽/장애물이 가로막고 있으면 true (관통 방지용)
+  const dx=bx-ax, dz=bz-az;
+  const dist=Math.hypot(dx,dz);
+  if(dist<0.01) return false;
+  const steps=Math.ceil(dist/0.4);
+  for(let s=1;s<steps;s++){
+    const t=s/steps;
+    const px=ax+dx*t, pz=az+dz*t;
+    for(let i=0;i<obstacles.length;i++){
+      const o=obstacles[i];
+      if(Math.abs(px-o.x)<o.hx+0.1&&Math.abs(pz-o.z)<o.hz+0.1&&o.y0<fy+1.5&&o.y1>fy+0.4) return true;
+    }
+  }
+  return false;
 }
 function terrainHitDist(ox,oy,oz,dx,dy,dz,maxDist){
   for(let t=3;t<=maxDist;t+=3){
@@ -808,6 +837,19 @@ function buildPlane(){
 }
 function updateDrop(dt){
   gunGroup.visible=false;
+  if(dropPhase==='lobby'){
+    // 대기실: 정지한 수송기 안. 카메라는 기내 시점(맵을 내려다봄)
+    if(planeGrp){
+      planeGrp.position.copy(planeStart);
+      planeGrp.rotation.y=Math.atan2(planeDir.x,planeDir.z);
+    }
+    player.pos.copy(planeStart); player.pos.y-=3;
+    camera.position.copy(player.pos);
+    camera.rotation.set(0,0,0);
+    camera.rotateY(planeGrp?planeGrp.rotation.y:0);
+    camera.rotateX(-0.35);
+    return;
+  }
   if(dropPhase==='plane'){
     planeT+=dt;
     const t=planeT/PLANE_DUR;
@@ -819,7 +861,7 @@ function updateDrop(dt){
       announce('강하! WASD로 방향 조절 — 40m에서 낙하산 자동 전개');
     }
   } else {
-    const g=terrainH(player.pos.x,player.pos.z);
+    const prevFeet=player.pos.y-EYE_STAND;
     const targetVy=dropPhase==='fall'?-46:-6.5;
     player.velY+=(targetVy-player.velY)*Math.min(1,dt*2.2);
     player.pos.y+=player.velY*dt;
@@ -836,11 +878,11 @@ function updateDrop(dt){
       player.pos.x=clamp(player.pos.x+mx/L*ctl*dt,-MAP_HALF,MAP_HALF);
       player.pos.z=clamp(player.pos.z+mz/L*ctl*dt,-MAP_HALF,MAP_HALF);
     }
-    if(dropPhase==='fall'&&player.pos.y-g<40){dropPhase='chute';announce('낙하산 전개!');}
-    if(player.pos.y<=g+EYE_STAND){
-      player.pos.y=g+EYE_STAND;player.velY=0;player.onGround=true;
+    const landG=groundYAt(player.pos.x,player.pos.z,prevFeet+0.05,true);
+    if(dropPhase==='fall'&&player.pos.y-landG<40){dropPhase='chute';announce('낙하산 전개!');}
+    if(player.pos.y<=landG+EYE_STAND){
+      player.pos.y=landG+EYE_STAND;player.velY=0;player.onGround=true;
       dropPhase='game';
-      if(planeGrp)scene.remove(planeGrp);
       announce('착지! 파밍을 시작하세요');
     }
   }
@@ -859,7 +901,7 @@ function updateDrop(dt){
 const player={pos:new THREE.Vector3(0,3,0),velY:0,yaw:0,pitch:0,hp:100,stance:'stand',onGround:true,dead:false,kills:0,eyeCur:1.7,boostT:0};
 const EYE_STAND=1.7,EYE_PRONE=0.55;
 let viewMode='fps';
-let dropPhase='plane';
+let dropPhase='lobby';
 const gunGroup=new THREE.Group();
 function buildGun(type){
   while(gunGroup.children.length)gunGroup.remove(gunGroup.children[0]);
@@ -904,8 +946,15 @@ function makeCharModel(color){
   const chute=new THREE.Mesh(new THREE.ConeGeometry(1.8,1.4,9,1,true),new THREE.MeshLambertMaterial({color:0xe8e8e8,side:THREE.DoubleSide}));chute.position.y=3.0;chute.visible=false;
   g.add(torso,head,legL,legR,armL,armR,helmet,vest,bag,gun,chute);
   g.userData.eq={helmet,vest,bag,gun,legL,legR,chute};
+  g.userData.bodyMats=[bodyM]; // torso+arms 공유 재질 (색 변경용)
   g.traverse(o=>{o.castShadow=true;});
   return g;
+}
+function setRemoteColor(r,colorIdx){
+  if(!r||!r.group)return;
+  r._color=colorIdx;
+  const col=AVATAR_COLORS[colorIdx%AVATAR_COLORS.length];
+  for(const mt of r.group.userData.bodyMats)mt.color.setHex(col);
 }
 function applyGearToModel(g,helmet,armor,bag,wIdx){
   const eq=g.userData.eq;
@@ -942,14 +991,13 @@ function makeNameTag(name){
 }
 function addRemote(id,name,x,y,z){
   if(remotes.has(id))return remotes.get(id);
-  const colors=[0xc27f5a,0x8a6b52,0x5a6b8a,0x6b8a5a,0x8a5a6b];
-  const group=makeCharModel(colors[id%colors.length]);
+  const group=makeCharModel(AVATAR_COLORS[(id-1)%AVATAR_COLORS.length]);
   group.userData.rid=id;
   group.position.set(x||0,(y||3)-EYE_STAND,z||0);
   const tag=makeNameTag(name||('플레이어'+id));
   group.add(tag);
   scene.add(group);
-  const r={id,name:name||('플레이어'+id),group,tag,buf:[],hp:100,alive:true,stance:'stand',helmet:0,bag:0,wIdx:0,armor:0};
+  const r={id,name:name||('플레이어'+id),group,tag,buf:[],hp:100,alive:true,stance:'stand',helmet:0,bag:0,wIdx:0,armor:0,_color:(id-1)%AVATAR_COLORS.length};
   remotes.set(id,r);
   return r;
 }
@@ -1035,18 +1083,33 @@ function makeCarMesh(x,z,heading,idx){
   return car;
 }
 function buildCars(){ carSpawns.forEach((s,i)=>makeCarMesh(s[0],s[1],s[2],i)); }
+function carGroundY(x,z){
+  let g=terrainH(x,z);
+  for(let i=0;i<platforms.length;i++){
+    const p=platforms[i];
+    if(Math.abs(x-p.x)<=p.hx&&Math.abs(z-p.z)<=p.hz){
+      if(p.y>g&&p.y<=g+8) g=p.y;
+    }
+  }
+  return g;
+}
 function updateCarPose(car){
   const x=car.mesh.position.x,z=car.mesh.position.z;
   const fdx=Math.sin(car.heading),fdz=Math.cos(car.heading);
   const rdx=fdz,rdz=-fdx;
   const L=1.6,W=0.95;
-  const hHere=terrainH(x,z);
-  const hF=terrainH(x+fdx*L,z+fdz*L),hB=terrainH(x-fdx*L,z-fdz*L);
-  const hL=terrainH(x+rdx*W,z+rdz*W),hR=terrainH(x-rdx*W,z-rdz*W);
-  car.mesh.position.y=Math.max((hF+hB+hL+hR)/4,hHere)+0.06;
+  const hHere=carGroundY(x,z);
+  const hF=carGroundY(x+fdx*L,z+fdz*L),hB=carGroundY(x-fdx*L,z-fdz*L);
+  const hL=carGroundY(x+rdx*W,z+rdz*W),hR=carGroundY(x-rdx*W,z-rdz*W);
+  const avg=(hF+hB+hL+hR)/4;
+  const useY=(Math.abs(avg-hHere)>2.5)?hHere:Math.max(avg,hHere);
+  const targetY=useY+0.06;
+  if(car._yInit) car.mesh.position.y+=(targetY-car.mesh.position.y)*0.5;
+  else { car.mesh.position.y=targetY; car._yInit=true; }
   car.mesh.rotation.y=car.heading;
-  car.mesh.rotation.x=clamp(Math.atan2(hB-hF,2*L),-0.45,0.45);
-  car.mesh.rotation.z=clamp(Math.atan2(hL-hR,2*W),-0.45,0.45);
+  const pA=Math.atan2(hB-hF,2*L), rA=Math.atan2(hL-hR,2*W);
+  car.mesh.rotation.x=clamp(Math.abs(pA)>0.6?0:pA,-0.4,0.4);
+  car.mesh.rotation.z=clamp(Math.abs(rA)>0.6?0:rA,-0.4,0.4);
   for(let i=0;i<4;i++){
     const oid=i===0?(car.drv||0):((car.pass&&car.pass[i-1])||0);
     const mk=car.seatMarks[i];
@@ -1061,7 +1124,8 @@ function nearestCar(maxD){
     if(c.drv&&c.pass.length>=3)continue; // 4인 만석
     if(c.drv===myId||c.pass.includes(myId))continue;
     const d=Math.hypot(c.mesh.position.x-player.pos.x,c.mesh.position.z-player.pos.z);
-    if(d<bd){bd=d;best=c;}
+    const fy=player.pos.y-player.eyeCur;
+    if(d<bd&&!segBlocked(player.pos.x,player.pos.z,c.mesh.position.x,c.mesh.position.z,fy)){bd=d;best=c;}
   }
   return best;
 }
@@ -1346,6 +1410,11 @@ const zoneS={cx:0,cz:0,r:MAP_HALF,ncx:0,ncz:0,nr:0,shrinking:false,timer:0,phase
 const airdropsFalling=[];
 const redzone={active:false,x:0,z:0,r:70,t:0,boomT:0};
 function sendHeal(amt){if(ws&&ws.readyState===1)ws.send(JSON.stringify({t:'heal',amt}));}
+let autoStart=null;
+try{
+  const as=sessionStorage.getItem('bg_autostart');
+  if(as){ autoStart=JSON.parse(as); sessionStorage.removeItem('bg_autostart'); }
+}catch(e){}
 function connect(){
   const url=location.origin.replace(/^http/,'ws');
   document.getElementById('connstatus').textContent='서버 접속 중...';
@@ -1360,6 +1429,7 @@ function connect(){
     let m;try{m=JSON.parse(ev.data);}catch(e){return;}
     if(m.t==='init'){
       myId=m.id;SEED=m.seed;
+      gameState=m.state||'lobby';
       takenSet=new Set(m.taken||[]);
       if(!worldBuilt)buildWorld();
       for(const idx of takenSet)removeItemIdx(idx);
@@ -1373,11 +1443,46 @@ function connect(){
         if(c.drv)occByPlayer.set(c.drv,c);
       }
       player.pos.set(m.spawn[0],terrainH(m.spawn[0],m.spawn[1])+EYE_STAND,m.spawn[1]);
-      for(const q of m.players){const r=addRemote(q.id,q.name,q.x,q.y,q.z);r.hp=q.hp;r.alive=!!q.alive;r.stance=q.stance;}
+      for(const q of m.players){const r=addRemote(q.id,q.name,q.x,q.y,q.z);r.hp=q.hp;r.alive=!!q.alive;r.stance=q.stance;if(q.color!==undefined)setRemoteColor(r,q.color);}
       netReady=true;
+      // 자동 재시작(라운드 시작 리로드)인 경우: 바로 수송기 강하로 진입
+      if(autoStart && autoStart.seed===SEED){
+        started=true;
+        beginMatch();
+      } else if(gameState==='playing'){
+        announce('현재 게임 진행 중 — 다음 라운드에 합류합니다');
+      }
     }
-    else if(m.t==='pjoin'){addRemote(m.id,m.name,0,3,0);addFeedRaw(m.name+' 님이 전장에 입장');}
+    else if(m.t==='pjoin'){const r=addRemote(m.id,m.name,0,3,0);if(m.color!==undefined)setRemoteColor(r,m.color);}
     else if(m.t==='pname'){renameRemote(m.id,m.name);}
+    else if(m.t==='lobby'){
+      lobbyPlayers=m.players||[];
+      const me=lobbyPlayers.find(p=>p.id===myId);
+      if(me&&me.color!==undefined)myColor=me.color;
+      if(inLobby)renderLobby();
+    }
+    else if(m.t==='pcolor'){
+      const r=remotes.get(m.id);
+      if(r)setRemoteColor(r,m.color);
+    }
+    else if(m.t==='start'){
+      // 새 시드로 게임 시작. 깨끗한 상태 보장을 위해 정보 저장 후 자동 재시작
+      try{
+        sessionStorage.setItem('bg_autostart', JSON.stringify({seed:m.seed, name:myName, color:myColor}));
+        localStorage.setItem('bg_name', myName);
+      }catch(e){}
+      location.reload();
+    }
+    else if(m.t==='tolobby'){
+      gameState='lobby';
+      // 게임 정리 후 대기실로
+      player.dead=false;
+      document.getElementById('deadoverlay').style.display='none';
+      document.exitPointerLock();
+      started=false;
+      enterLobby();
+      announce('대기실로 돌아왔습니다 — 다시 준비하세요');
+    }
     else if(m.t==='pleave'){
       const r=remotes.get(m.id);
       if(r)addFeedRaw(r.name+' 님이 퇴장');
@@ -1390,10 +1495,11 @@ function connect(){
       const now=performance.now();
       let aliveN=0;
       for(const arr of m.p){
-        const [id,x,y,z,yaw,pr,hp,alive,helmet,bag,wIdx,armor,dflag]=arr;
+        const [id,x,y,z,yaw,pr,hp,alive,helmet,bag,wIdx,armor,dflag,color]=arr;
         aliveN+=alive;
         if(id===myId)continue;
         const r=remotes.get(id)||addRemote(id,'플레이어'+id,x,y,z);
+        if(color!==undefined&&r._color!==color)setRemoteColor(r,color);
         r.buf.push({tt:now,x,y,z,yaw});
         if(r.buf.length>30)r.buf.shift();
         r.stance=pr?'prone':'stand';
@@ -1537,11 +1643,7 @@ function connect(){
       }
     }
     else if(m.t==='win'){
-      announce('🏆 '+m.name+' 승리! — 이겼닭! 오늘 저녁은 치킨이닭! (곧 새 라운드)');
-    }
-    else if(m.t==='reset'){
-      try{localStorage.setItem('bg_name',myName);}catch(e){}
-      location.reload();
+      announce('🏆 '+m.name+' 승리! — 이겼닭! 오늘 저녁은 치킨이닭! (곧 대기실로)');
     }
   };
 }
@@ -1613,22 +1715,98 @@ const keys={};
 let locked=false,started=false;
 let mouseDown=false,ads=false,fireCooldown=0,reloading=0,meleeCd=0;
 let sprintOn=false,shiftUsed=false;
+// ================= 대기실(로비) =================
+const AVATAR_COLORS=[0xc27f5a,0x5a8ac2,0x6bbf5a,0xc25a8a,0xc2b45a,0x9a5ac2,0x5ac2b4,0xc26b3a];
+const AVATAR_NAMES=['주황','파랑','초록','분홍','노랑','보라','청록','갈색'];
+let myColor=0, inLobby=false, lobbyPlayers=[];
+function buildColorPicker(){
+  const cp=document.getElementById('colorpicker');
+  cp.innerHTML='';
+  AVATAR_COLORS.forEach((col,i)=>{
+    const b=document.createElement('div');
+    b.style.cssText='width:44px;height:44px;border-radius:8px;cursor:pointer;border:3px solid '+(i===myColor?'#fff':'transparent')+';box-shadow:0 2px 6px rgba(0,0,0,.4);';
+    b.style.background='#'+col.toString(16).padStart(6,'0');
+    b.title=AVATAR_NAMES[i];
+    b.onclick=()=>{
+      myColor=i;
+      buildColorPicker();
+      if(ws&&ws.readyState===1)ws.send(JSON.stringify({t:'color',color:i}));
+    };
+    cp.appendChild(b);
+  });
+}
+function renderLobby(){
+  const list=document.getElementById('lobbylist');
+  list.innerHTML='';
+  lobbyPlayers.forEach(p=>{
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;align-items:center;gap:12px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:10px 16px;';
+    const sw=document.createElement('div');
+    sw.style.cssText='width:24px;height:24px;border-radius:5px;flex-shrink:0;';
+    sw.style.background='#'+AVATAR_COLORS[p.color||0].toString(16).padStart(6,'0');
+    const nm=document.createElement('div');
+    nm.style.cssText='flex:1;color:#fff;font-size:15px;text-align:left;';
+    nm.textContent=p.name+(p.id===myId?' (나)':'');
+    const rd=document.createElement('div');
+    rd.style.cssText='font-size:13px;font-weight:bold;color:'+(p.ready?'#5ad06a':'#888')+';';
+    rd.textContent=p.ready?'✔ 준비완료':'대기중';
+    row.appendChild(sw);row.appendChild(nm);row.appendChild(rd);
+    list.appendChild(row);
+  });
+  const readyN=lobbyPlayers.filter(p=>p.ready).length;
+  document.getElementById('lobbysub').textContent='참가자 '+lobbyPlayers.length+'명 · 준비 '+readyN+'명 — 모두 준비되면 출발';
+}
+function enterLobby(){
+  inLobby=true;
+  document.getElementById('startscreen').style.display='none';
+  document.getElementById('lobbyscreen').style.display='flex';
+  buildColorPicker();
+  renderLobby();
+  audio();
+}
 document.getElementById('startbtn').addEventListener('click',()=>{
   const inp=document.getElementById('nameinput');
   myName=(inp.value||'').trim().slice(0,12)||('전사'+Math.floor(Math.random()*999));
   if(!ws||ws.readyState!==1)connect();
   else ws.send(JSON.stringify({t:'join',name:myName}));
-  const tryStart=()=>{
+  const tryEnter=()=>{
     if(netReady){
-      document.getElementById('startscreen').style.display='none';
-      started=true;audio();
-      canvas.requestPointerLock();
-      renderInv();
-    } else setTimeout(tryStart,200);
+      ws.send(JSON.stringify({t:'color',color:myColor}));
+      enterLobby();
+    } else setTimeout(tryEnter,150);
   };
-  tryStart();
+  tryEnter();
 });
+document.getElementById('readybtn').addEventListener('click',function(){
+  const nowReady=!(this.dataset.on==='1');
+  this.dataset.on=nowReady?'1':'0';
+  this.textContent=nowReady?'✔ 준비됨 (취소)':'준비 완료';
+  this.style.background=nowReady?'#3c8a48':'#5ad06a';
+  if(ws&&ws.readyState===1)ws.send(JSON.stringify({t:'ready',ready:nowReady}));
+});
+document.getElementById('startmatchbtn').addEventListener('click',()=>{
+  if(ws&&ws.readyState===1)ws.send(JSON.stringify({t:'startgame'}));
+});
+function beginMatch(){
+  inLobby=false;
+  document.getElementById('lobbyscreen').style.display='none';
+  document.getElementById('startscreen').style.display='none';
+  started=true;
+  dropPhase='plane'; planeT=0;
+  player.dead=false; player.hp=100;
+  inventory=[]; heldWeapon=null; buildGun(null);
+  bagLevel=0; hasHelmet=false; armorLocal=0;
+  renderInv(); updateHUD();
+  canvas.requestPointerLock();
+  announce('✈ 수송기 이륙! Space로 원하는 지점에서 강하');
+}
 try{const saved=localStorage.getItem('bg_name');if(saved)document.getElementById('nameinput').value=saved;}catch(e){}
+// 라운드 재시작에 의한 리로드면 자동으로 접속+게임 진입
+if(autoStart){
+  myName=autoStart.name||('전사'+Math.floor(Math.random()*999));
+  myColor=autoStart.color||0;
+  connect();
+}
 canvas.addEventListener('click',()=>{if(started&&!player.dead)canvas.requestPointerLock();});
 document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===canvas;});
 document.addEventListener('mousemove',e=>{
@@ -1730,7 +1908,8 @@ function updateItems(dt){
     it.mesh.position.y=it.gy+0.35+Math.sin(t*2+it.x)*0.06;
     if(!driving&&!passengerCar){
       const d=Math.hypot(it.x-player.pos.x,it.z-player.pos.z);
-      if(d<bestD&&Math.abs(it.gy-(player.pos.y-player.eyeCur))<2.2){bestD=d;nearItemIdx=idx;}
+      const fy=player.pos.y-player.eyeCur;
+      if(d<bestD&&Math.abs(it.gy-fy)<2.2&&!segBlocked(player.pos.x,player.pos.z,it.x,it.z,fy)){bestD=d;nearItemIdx=idx;}
     }
   }
   const hint=document.getElementById('hint');
@@ -2226,6 +2405,16 @@ function loop(now){
   requestAnimationFrame(loop);
   const dt=Math.min(0.05,(now-last)/1000);
   last=now;
+  if(inLobby && worldBuilt){
+    // 대기실: 맵 상공을 천천히 도는 카메라 (게임 시작 전 미리보기)
+    const t=now*0.00008;
+    const rad=MAP_HALF*0.9;
+    camera.position.set(Math.cos(t)*rad, 260, Math.sin(t)*rad);
+    camera.lookAt(0,0,0);
+    if(planeGrp){ planeGrp.visible=true; }
+    renderer.render(scene,camera);
+    return;
+  }
   if(started){
     autoQuality(dt);
     updateRemoteCars(dt);

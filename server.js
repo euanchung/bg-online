@@ -37,7 +37,9 @@ const WDMG = {
 
 let seed = Math.floor(Math.random() * 1e9);
 let nextId = 1;
-let roundActive = true;
+let roundActive = false;
+let gameState = 'lobby'; // 'lobby' | 'playing' | 'ended'
+let planeStartAt = 0;    // 게임 시작(수송기 출발) 시각
 const players = new Map();
 let taken = new Set();       // 획득된 아이템 idx
 let dynIdx = 100000;         // 동적 아이템(투하/드랍) idx 시작
@@ -85,26 +87,61 @@ function spawnPos(i) {
   const r = MAP_HALF * 0.55;
   return [Math.cos(a) * r, Math.sin(a) * r];
 }
+function sendLobby() {
+  if (gameState !== 'lobby') return;
+  const list = [...players.values()].map(q => ({ id: q.id, name: q.name, color: q.color, ready: q.ready }));
+  broadcast({ t: 'lobby', players: list, count: players.size });
+}
+function startMatch() {
+  gameState = 'playing';
+  roundActive = true;
+  seed = Math.floor(Math.random() * 1e9);
+  resetZone(); resetCars();
+  taken = new Set();
+  planeStartAt = Date.now();
+  for (const q of players.values()) {
+    const [sx2, sz2] = spawnPos(q.id);
+    q.hp = 100; q.armor = 0; q.helmet = false; q.bag = 0; q.w = '';
+    q.alive = true; q.x = sx2; q.z = sz2; q.kills = 0; q.d = 1; q.ready = false;
+  }
+  broadcast({ t: 'start', seed });
+  console.log('[게임 시작] 시드 ' + seed + ' (' + players.size + '명)');
+}
 const WIDX = { '': 0, rifle: 1, shotgun: 2, sniper: 3 };
 
 wss.on('connection', (ws) => {
   const id = nextId++;
   const [sx, sz] = spawnPos(id);
-  const p = { ws, id, name: '플레이어' + id, x: sx, y: 0, z: sz, yaw: 0, pitch: 0, stance: 'stand', hp: 100, armor: 0, helmet: false, bag: 0, w: '', alive: true, kills: 0 };
+  const p = { ws, id, name: '플레이어' + id, x: sx, y: 0, z: sz, yaw: 0, pitch: 0, stance: 'stand', hp: 100, armor: 0, helmet: false, bag: 0, w: '', alive: true, kills: 0, color: (id-1)%8, ready: false, d: 0 };
   players.set(id, p);
   send(p, {
-    t: 'init', id, seed, spawn: [sx, sz], taken: [...taken],
+    t: 'init', id, seed, spawn: [sx, sz], taken: [...taken], state: gameState,
     cars: cars.map((c, i) => [i, +c.x.toFixed(1), +c.z.toFixed(1), +c.h.toFixed(2), Math.round(c.hp), c.drv, c.mv, Math.round(c.fuel), c.pass.slice()]),
     players: [...players.values()].filter(q => q.id !== id)
-      .map(q => ({ id: q.id, name: q.name, x: q.x, y: q.y, z: q.z, yaw: q.yaw, stance: q.stance, hp: q.hp, alive: q.alive })),
+      .map(q => ({ id: q.id, name: q.name, x: q.x, y: q.y, z: q.z, yaw: q.yaw, stance: q.stance, hp: q.hp, alive: q.alive, color: q.color, ready: q.ready })),
   });
-  broadcast({ t: 'pjoin', id, name: p.name }, id);
+  broadcast({ t: 'pjoin', id, name: p.name, color: p.color }, id);
+  sendLobby();
   console.log('[+] 접속: #' + id + ' (현재 ' + players.size + '명)');
 
   ws.on('message', (raw) => {
     let m; try { m = JSON.parse(raw); } catch (e) { return; }
 
-    if (m.t === 'join') { p.name = String(m.name || '').slice(0, 12) || ('플레이어' + id); broadcast({ t: 'pname', id, name: p.name }); }
+    if (m.t === 'join') { p.name = String(m.name || '').slice(0, 12) || ('플레이어' + id); broadcast({ t: 'pname', id, name: p.name }); sendLobby(); }
+    else if (m.t === 'color') {
+      if (gameState !== 'lobby') return;
+      const c = m.color | 0;
+      if (c >= 0 && c < 8) { p.color = c; broadcast({ t: 'pcolor', id, color: c }); sendLobby(); }
+    }
+    else if (m.t === 'ready') {
+      if (gameState !== 'lobby') return;
+      p.ready = !!m.ready;
+      sendLobby();
+    }
+    else if (m.t === 'startgame') {
+      if (gameState !== 'lobby') return;
+      startMatch();
+    }
     else if (m.t === 'state') {
       if (!p.alive) return;
       p.x = +m.x || 0; p.y = +m.y || 0; p.z = +m.z || 0;
@@ -232,7 +269,8 @@ wss.on('connection', (ws) => {
     players.delete(id);
     broadcast({ t: 'pleave', id });
     console.log('[-] 퇴장: #' + id + ' (현재 ' + players.size + '명)');
-    checkWin();
+    if (gameState === 'lobby') sendLobby();
+    else checkWin();
   });
 });
 
@@ -261,35 +299,41 @@ function applyDamage(tgt, dmg, from, head, cause) {
   }
 }
 
-function checkWin() {
-  if (!roundActive) return;
-  const arr = [...players.values()];
-  if (arr.length < 2) return;
-  const alive = arr.filter(q => q.alive);
-  if (alive.length <= 1) {
+function endMatch(winnerName, winnerKills) {
+  if (gameState !== 'playing') return;
+  roundActive = false;
+  gameState = 'ended';
+  broadcast({ t: 'win', name: winnerName || '-', kills: winnerKills || 0 });
+  console.log('[게임 종료] 승자: ' + (winnerName || '-') + ' → 곧 대기실로');
+  // 잠시 후 대기실(로비)로 복귀. 남아있는 사람들은 다시 준비 후 시작 가능
+  setTimeout(() => {
+    gameState = 'lobby';
     roundActive = false;
-    broadcast({ t: 'win', name: alive.length ? alive[0].name : '-', kills: alive.length ? alive[0].kills : 0 });
-    console.log('[승리] ' + (alive.length ? alive[0].name : '-'));
-    setTimeout(() => {
-      seed = Math.floor(Math.random() * 1e9);
-      resetZone(); resetCars();
-      taken = new Set();
-      for (const q of players.values()) {
-        const [sx2, sz2] = spawnPos(q.id);
-        q.hp = 100; q.armor = 0; q.helmet = false; q.bag = 0; q.w = '';
-        q.alive = true; q.x = sx2; q.z = sz2; q.kills = 0;
-      }
-      roundActive = true;
-      broadcast({ t: 'reset', seed });
-      console.log('[라운드] 새 시드 ' + seed);
-    }, 7000);
-  }
+    resetZone(); resetCars();
+    taken = new Set();
+    for (const q of players.values()) {
+      q.hp = 100; q.armor = 0; q.helmet = false; q.bag = 0; q.w = '';
+      q.alive = true; q.kills = 0; q.ready = false; q.d = 0;
+    }
+    broadcast({ t: 'tolobby' });
+    sendLobby();
+    console.log('[대기실] 복귀 완료');
+  }, 6000);
+}
+function checkWin() {
+  if (gameState !== 'playing') return;
+  const arr = [...players.values()];
+  const alive = arr.filter(q => q.alive);
+  // 아무도 안 남으면(전멸/전원 퇴장) 즉시 종료 → 대기실
+  if (alive.length === 0) { endMatch('-', 0); return; }
+  // 2명 이상으로 시작했고 1명만 남으면 승리
+  if (arr.length >= 2 && alive.length === 1) { endMatch(alive[0].name, alive[0].kills); return; }
 }
 
 // ---------- 서버 이벤트: 에어드랍 / 폭격 / 비 ----------
 let dropT = FAST ? 2 : 75, redT = FAST ? 4 : 110, rainT = FAST ? 6 : 90, rainOn = false, rainLeft = 0;
 setInterval(() => {
-  if (!roundActive || players.size === 0) return;
+  if (gameState !== 'playing' || players.size === 0) return;
   dropT -= 1;
   if (dropT <= 0) {
     dropT = FAST ? 6 : (70 + Math.random() * 40);
@@ -316,7 +360,7 @@ setInterval(() => {
 
 // ---------- 자기장 틱 ----------
 setInterval(() => {
-  if (!roundActive) return;
+  if (gameState !== 'playing') return;
   const dt = 0.1;
   const ph = phases[Math.min(zone.phase, phases.length - 1)];
   if (!zone.shrinking) {
@@ -339,11 +383,11 @@ setInterval(() => {
 
 // ---------- 스냅샷 (20Hz) ----------
 setInterval(() => {
-  if (players.size === 0) return;
+  if (players.size === 0 || gameState !== 'playing') return;
   const list = [...players.values()].map(p =>
     [p.id, +p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2), +p.yaw.toFixed(3),
      p.stance === 'prone' ? 1 : 0, Math.round(p.hp), p.alive ? 1 : 0,
-     p.helmet ? 1 : 0, p.bag, WIDX[p.w] || 0, Math.round(p.armor), p.d || 0]);
+     p.helmet ? 1 : 0, p.bag, WIDX[p.w] || 0, Math.round(p.armor), p.d || 0, p.color]);
   // 대역폭 절감: 움직였거나 탑승/파손된 차량만 전송
   const carList = [];
   for (let i = 0; i < cars.length; i++) {
