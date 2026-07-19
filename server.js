@@ -40,6 +40,7 @@ let nextId = 1;
 let roundActive = false;
 let gameState = 'lobby'; // 'lobby' | 'playing' | 'ended'
 let planeStartAt = 0;    // 게임 시작(수송기 출발) 시각
+let matchStartCount = 0; // 이번 판을 시작한 인원 수
 const players = new Map();
 let taken = new Set();       // 획득된 아이템 idx
 let dynIdx = 100000;         // 동적 아이템(투하/드랍) idx 시작
@@ -99,6 +100,7 @@ function startMatch() {
   resetZone(); resetCars();
   taken = new Set();
   planeStartAt = Date.now();
+  matchStartCount = players.size;
   for (const q of players.values()) {
     const [sx2, sz2] = spawnPos(q.id);
     q.hp = 100; q.armor = 0; q.helmet = false; q.bag = 0; q.w = '';
@@ -173,7 +175,7 @@ wss.on('connection', (ws) => {
       broadcast({ t: 'hp', id, hp: Math.round(p.hp), armor: Math.round(p.armor) });
     }
     else if (m.t === 'selfdmg') {
-      if (!p.alive || !roundActive) return;
+      if (!p.alive || !roundActive || gameState !== 'playing') return;
       applyDamage(p, Math.max(0, Math.min(130, +m.amt || 0)), null, false, String(m.cause || '피해').slice(0, 20));
     }
     else if (m.t === 'shoot') {
@@ -202,7 +204,8 @@ wss.on('connection', (ws) => {
       send(p, { t: 'pong', ts: m.ts });
     }
     else if (m.t === 'zone') {
-      if (!p.alive || !roundActive) return;
+      if (!p.alive || !roundActive || gameState !== 'playing') return;
+      if (p.d) return; // 강하(낙하/낙하산) 중에는 자기장 피해 없음
       const d = Math.hypot(p.x - zone.cx, p.z - zone.cz);
       if (d > zone.r - 2 || zone.r < 6) applyDamage(p, zone.dps, null, false, '자기장');
     }
@@ -324,10 +327,12 @@ function checkWin() {
   if (gameState !== 'playing') return;
   const arr = [...players.values()];
   const alive = arr.filter(q => q.alive);
-  // 아무도 안 남으면(전멸/전원 퇴장) 즉시 종료 → 대기실
-  if (alive.length === 0) { endMatch('-', 0); return; }
-  // 2명 이상으로 시작했고 1명만 남으면 승리
-  if (arr.length >= 2 && alive.length === 1) { endMatch(alive[0].name, alive[0].kills); return; }
+  // 접속자가 아예 없을 때만 종료(서버 정리). 남아있으면 계속.
+  if (arr.length === 0) { endMatch('-', 0); return; }
+  // 혼자 플레이(연습): 게임을 끝내지 않는다. 죽어도 라운드 유지.
+  if (matchStartCount <= 1) return;
+  // 2명 이상으로 시작한 경우에만 '마지막 1인 승리' 판정
+  if (alive.length <= 1) { endMatch(alive.length ? alive[0].name : '-', alive.length ? alive[0].kills : 0); return; }
 }
 
 // ---------- 서버 이벤트: 에어드랍 / 폭격 / 비 ----------
