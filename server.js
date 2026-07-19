@@ -111,6 +111,7 @@ wss.on('connection', (ws) => {
       p.yaw = +m.yaw || 0; p.pitch = +m.pitch || 0;
       p.stance = (m.stance === 'prone') ? 'prone' : 'stand';
       p.w = WIDX[m.w] !== undefined ? m.w : '';
+      p.d = m.d ? 1 : 0;
     }
     else if (m.t === 'gear') {
       p.armor = Math.max(0, Math.min(100, +m.armor || 0));
@@ -154,6 +155,10 @@ wss.on('connection', (ws) => {
       const dx = tgt.x - p.x, dz = tgt.z - p.z;
       if (dx * dx + dz * dz > wp.rng * wp.rng) return;
       let dmg = (m.w === 'nade') ? Math.max(0, Math.min(130, +m.dmg || 0)) : (m.head ? wp.h : wp.b);
+      if (m.w === 'rifle' || m.w === 'shotgun' || m.w === 'sniper') {
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        dmg *= Math.max(0.55, Math.min(1, 1 - (dist - 60) / 500)); // 거리 감쇠
+      }
       applyDamage(tgt, dmg, p, !!m.head, null);
     }
     else if (m.t === 'ping') {
@@ -338,7 +343,7 @@ setInterval(() => {
   const list = [...players.values()].map(p =>
     [p.id, +p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2), +p.yaw.toFixed(3),
      p.stance === 'prone' ? 1 : 0, Math.round(p.hp), p.alive ? 1 : 0,
-     p.helmet ? 1 : 0, p.bag, WIDX[p.w] || 0, Math.round(p.armor)]);
+     p.helmet ? 1 : 0, p.bag, WIDX[p.w] || 0, Math.round(p.armor), p.d || 0]);
   // 대역폭 절감: 움직였거나 탑승/파손된 차량만 전송
   const carList = [];
   for (let i = 0; i < cars.length; i++) {

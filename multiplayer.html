@@ -123,7 +123,7 @@
     <div><b>WASD</b> 이동 · <b>Shift</b> 달리기 ON/OFF · <b>Space</b> 점프 · <b>C</b> 엎드리기 · <b>E</b> 줍기 · <b>F</b> 차량(동승 4인)</div>
     <div><b>1~8</b> 소지품 · <b>Shift+1~8</b> 버리기 · <b>R</b> 재장전 · <b>G</b> 수류탄 차징 · <b>T</b> 연막탄 차징</div>
     <div><b>좌클릭</b> 사격/주먹 · <b>우클릭</b> 조준 (Kar98k 8배율) · <b>V</b> 1/3인칭 · <b>M</b> 효과음</div>
-    <div style="margin-top:6px;color:#aaa">— 모두 맨손 시작 · 같은 맵 파밍 경쟁 · 마지막 1인 승리 —</div>
+    <div style="margin-top:6px;color:#aaa">— ✈ 수송기에서 Space로 강하 → 낙하산 착지 → 파밍 경쟁 · 마지막 1인 승리 —</div>
   </div>
   <div id="connstatus"></div>
   <input id="nameinput" maxlength="12" placeholder="닉네임 입력">
@@ -261,6 +261,9 @@ const roofMats=[new THREE.MeshLambertMaterial({color:0x7a4a3a}),new THREE.MeshLa
 const floorMat=new THREE.MeshLambertMaterial({color:0x6e5a44});
 const stairMat=new THREE.MeshLambertMaterial({color:0x7d6a50});
 const foundMat=new THREE.MeshLambertMaterial({color:0x6f6a60});
+const trimMat=new THREE.MeshLambertMaterial({color:0xefe8da});
+const awnMat=new THREE.MeshLambertMaterial({color:0xa33c3c});
+const chimMat=new THREE.MeshLambertMaterial({color:0x8a5a48});
 const T=0.35,DOOR_W=2.0,DOOR_H=2.3,FLOOR_H=3.0;
 
 function addHouse(cx,cz,w,d,floors){
@@ -268,16 +271,23 @@ function addHouse(cx,cz,w,d,floors){
     const b=mmBuildings[i];
     if(Math.abs(cx-b.x)<w/2+b.hx+2.5&&Math.abs(cz-b.z)<d/2+b.hz+2.5) return;
   }
-  const baseY=terrainH(cx,cz);
+  // [경사지 버그 수정] 네 모서리 중 최고점 기준으로 건물을 올림
+  const baseY=Math.max(terrainH(cx,cz),
+    terrainH(cx-w/2,cz-d/2),terrainH(cx+w/2,cz-d/2),
+    terrainH(cx-w/2,cz+d/2),terrainH(cx+w/2,cz+d/2))+0.02;
   const g=new THREE.Group();
   g.position.set(cx,baseY,cz);
   const wallMat=new THREE.MeshLambertMaterial({color:wallColors[Math.floor(wrng(0,wallColors.length))%wallColors.length]});
+  // 건물 스타일 다양화 (주택/상점/차고)
+  const styleR=wrng(0,1);
+  const bstyle=floors===1?(styleR<0.3?'shop':(styleR<0.45?'garage':'house')):'house';
+  const DW=bstyle==='shop'?Math.min(3.4,w-3):(bstyle==='garage'?Math.min(4.4,w-2.5):DOOR_W);
   const totalH=floors*FLOOR_H;
   const flatRoof=floors>1&&wrng(0,1)<0.65;
   const upperWindow=wrng(0,1)<0.5;
   const roofPick=Math.floor(wrng(0,2))%2;
-  const found=new THREE.Mesh(new THREE.BoxGeometry(w+0.5,5,d+0.5),foundMat);
-  found.position.y=-2.4;g.add(found);
+  const found=new THREE.Mesh(new THREE.BoxGeometry(w+0.5,6,d+0.5),foundMat);
+  found.position.y=-2.9;g.add(found);
   function box(lx,ly,lz,sx,sy,sz,mat,opts){
     const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),mat||wallMat);
     m.position.set(lx,ly+sy/2,lz);
@@ -289,10 +299,10 @@ function addHouse(cx,cz,w,d,floors){
     return m;
   }
   function doorWall(fy,zPos){
-    const segW=(w-DOOR_W)/2;
-    box(-(DOOR_W/2+segW/2),fy,zPos,segW,FLOOR_H,T,wallMat,{block:true});
-    box((DOOR_W/2+segW/2),fy,zPos,segW,FLOOR_H,T,wallMat,{block:true});
-    box(0,fy+DOOR_H,zPos,DOOR_W,FLOOR_H-DOOR_H,T,wallMat,{});
+    const segW=(w-DW)/2;
+    box(-(DW/2+segW/2),fy,zPos,segW,FLOOR_H,T,wallMat,{block:true});
+    box((DW/2+segW/2),fy,zPos,segW,FLOOR_H,T,wallMat,{block:true});
+    box(0,fy+DOOR_H,zPos,DW,FLOOR_H-DOOR_H,T,wallMat,{});
   }
   const inL=-w/2+T,inR=w/2-T,inB=-d/2+T,inF=d/2-T;
   const stairW=1.6,stairRun=0.46,stairN=Math.ceil(FLOOR_H/0.34);
@@ -315,6 +325,13 @@ function addHouse(cx,cz,w,d,floors){
     } else {
       box(0,fy,d/2-T/2,w,1.15,T,wallMat,{block:true});
     }
+  }
+  // 내부 다양화: 칸막이벽 + 가구 상자 (엄폐물)
+  if(bstyle==='house'&&w>10&&wrng(0,1)<0.55){
+    box(wrng(-w/6,w/6),0,-d/6,T,FLOOR_H*0.9,d*0.42,wallMat,{block:true});
+  }
+  if(wrng(0,1)<0.65){
+    box(wrng(-w/4,w/4),0.12,wrng(-d/4,0),1.1,0.8,0.8,stairMat,{block:true});
   }
   const topSlab=flatRoof?floors:floors-1;
   for(let j=1;j<=topSlab;j++){
@@ -347,18 +364,33 @@ function addHouse(cx,cz,w,d,floors){
     box(w/2-T/2,ry,0,T,ph,d,wallMat,{block:true});
   } else {
     box(0,totalH,0,w+0.6,0.26,d+0.6,roofMats[roofPick],{});
+    if(wrng(0,1)<0.5){
+      const chim=new THREE.Mesh(new THREE.BoxGeometry(0.7,1.3,0.7),chimMat);
+      chim.position.set(w*0.28,totalH+0.75,-d*0.2);chim.castShadow=true;g.add(chim);
+    }
+  }
+  // 외관 다양화: 층 경계 트림 띠 + 상점 차양 (시각 전용)
+  for(let k=1;k<=floors;k++){
+    const tr=new THREE.Mesh(new THREE.BoxGeometry(w+0.18,0.18,d+0.18),trimMat);
+    tr.position.y=k*FLOOR_H-0.1;g.add(tr);
+  }
+  if(bstyle==='shop'){
+    const awn=new THREE.Mesh(new THREE.BoxGeometry(DW+1.2,0.12,1.3),awnMat);
+    awn.position.set(0,DOOR_H+0.35,d/2+0.65);awn.rotation.x=0.25;g.add(awn);
   }
   const fl=new THREE.Mesh(new THREE.BoxGeometry(w-T,0.12,d-T),floorMat);
   fl.position.y=0.06;fl.receiveShadow=true;g.add(fl);
+  // [경사지 버그 수정] 1층 바닥을 실제 판정면으로 + 문 앞 진입 경사 램프
+  platforms.push({x:cx,z:cz,hx:(w-T)/2,hz:(d-T)/2,y:baseY+0.12});
+  ramps.push({x:cx,hx:DW/2+0.45,zA:cz+d/2+1.5,zB:cz+d/2-0.6,yA:terrainH(cx,cz+d/2+1.5),yB:baseY+0.12});
   scene.add(g);
-  mmBuildings.push({x:cx,z:cz,hx:w/2,hz:d/2});
+  mmBuildings.push({x:cx,z:cz,hx:w/2,hz:d/2,topY:baseY+totalH});
   // 실내 아이템 (결정적 순서)
-  itemSpawnQueue.push([cx+wrng(-w/4,w/4),cz+wrng(-d/4,d/6),baseY]);
-  if(wrng(0,1)<0.6) itemSpawnQueue.push([cx+wrng(-w/4,w/4),cz+wrng(-d/4,d/6),baseY]);
+  itemSpawnQueue.push([cx+wrng(-w/4,w/4),cz+wrng(-d/4,d/6),baseY+0.12]);
+  if(wrng(0,1)<0.6) itemSpawnQueue.push([cx+wrng(-w/4,w/4),cz+wrng(-d/4,d/6),baseY+0.12]);
   if(floors>1) itemSpawnQueue.push([cx+wrng(0,w/4),cz+wrng(-d/4,d/6),baseY+(floors-1)*FLOOR_H+0.02]);
   if(flatRoof) itemSpawnQueue.push([cx+wrng(-w/5,w/5),cz+wrng(-d/5,d/6),baseY+floors*FLOOR_H+0.02]);
 }
-
 function insideBld(x,z,m){
   for(let i=0;i<mmBuildings.length;i++){
     const b=mmBuildings[i];
@@ -477,6 +509,7 @@ function buildWorld(){
   for(let i=0;i<2;i++) carSpawns.push([wrng(-MAP_HALF*0.6,MAP_HALF*0.6),wrng(-MAP_HALF*0.6,MAP_HALF*0.6),wrng(0,Math.PI*2)]);
   buildCars();
   buildMinimapBg();
+  buildPlane();
   worldBuilt=true;
 }
 
@@ -491,13 +524,24 @@ const WNAME2IDX={'':0,rifle:1,shotgun:2,sniper:3};
 const WIDX2NAME=['','rifle','shotgun','sniper'];
 const ITEM_LABEL={rifle:'M416',shotgun:'S686',sniper:'Kar98k',ammo:'탄약',med:'구급상자',vest:'방탄조끼',drink:'에너지드링크',backpack:'가방',grenade:'수류탄',fuel:'기름통',crate:'보급상자',bandage:'붕대',helmet:'헬멧',medkit:'의료키트',smoke:'연막탄',airdrop:'보급 투하물'};
 const STACK={med:3,drink:3,grenade:3,ammo:180,fuel:2,bandage:5,medkit:1,smoke:3};
-const ITEM_POOL=['gun','gun','gun','gun','ammo','ammo','ammo','med','med','bandage','bandage','vest','helmet','drink','backpack','backpack','grenade','grenade','smoke','smoke','fuel','fuel','medkit'];
+const ITEM_POOL=['gun','gun','gun','gun','ammo','ammo','ammo','ammo','med','bandage','vest','helmet','drink','backpack','backpack','grenade','grenade','smoke','smoke','fuel','fuel','medkit'];
 function randItemTypeSeeded(){
   const t=ITEM_POOL[Math.floor(wrng(0,ITEM_POOL.length))%ITEM_POOL.length];
   if(t==='gun') return WEAPON_KEYS[Math.floor(wrng(0,3))%3];
   return t;
 }
 const itemsByIdx=new Map(); // idx -> {mesh,type,x,z,gy,level}
+function makeItemLabel(text){
+  const cv=document.createElement('canvas');
+  cv.width=192;cv.height=48;
+  const c=cv.getContext('2d');
+  c.font='bold 24px sans-serif';c.textAlign='center';
+  c.fillStyle='rgba(0,0,0,0.55)';c.fillRect(0,4,192,40);
+  c.fillStyle='#ffd76a';c.fillText(text,96,32);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(cv)}));
+  sp.scale.set(1.5,0.38,1);
+  return sp;
+}
 let takenSet=new Set();
 function gunItemMesh(color){
   const m=new THREE.Group();
@@ -546,9 +590,21 @@ function spawnItemAt(idx,x,z,type,yBase,level){
     const beam=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.28,7,8,1,true),new THREE.MeshBasicMaterial({color:0xffd76a,transparent:true,opacity:0.25,side:THREE.DoubleSide,depthWrite:false}));
     beam.position.y=3.6;mesh.add(beam);
   }
+  // 구급류 십자 문양
+  if(type==='med'||type==='medkit'){
+    const c1=new THREE.Mesh(new THREE.BoxGeometry(0.3,0.02,0.09),new THREE.MeshLambertMaterial({color:type==='med'?0xffffff:0xdd3333}));
+    c1.position.y=(type==='med'?0.18:0.21);
+    const c2=c1.clone();c2.rotation.y=Math.PI/2;
+    mesh.add(c1,c2);
+  }
   const gy=(yBase!==undefined&&yBase!==null)?yBase:terrainH(x,z);
   mesh.position.set(x,gy+0.35,z);
   mesh.traverse(o=>{o.castShadow=true;});
+  // 아이템 이름표
+  const lbTxt=type==='backpack'?('가방 Lv'+(lvl||1)):(ITEM_LABEL[type]||type);
+  const lb=makeItemLabel(lbTxt);
+  lb.position.y=0.85;
+  mesh.add(lb);
   scene.add(mesh);
   itemsByIdx.set(idx,{mesh,type,x,z,gy,level:lvl});
 }
@@ -732,10 +788,78 @@ function renderInv(){
   }
 }
 
+// ================= 수송기 강하 =================
+let planeGrp=null,planeT=0;
+const PLANE_DUR=20;
+let planeStart=null,planeDir=null;
+function buildPlane(){
+  const pa=wrng(0,Math.PI*2); // 시드 기반: 모두 같은 항로
+  planeStart=new THREE.Vector3(Math.cos(pa)*MAP_HALF*1.05,190,Math.sin(pa)*MAP_HALF*1.05);
+  planeDir=new THREE.Vector3(-Math.cos(pa),0,-Math.sin(pa));
+  planeGrp=new THREE.Group();
+  const fus=new THREE.Mesh(new THREE.CylinderGeometry(2.2,2.6,26,10),new THREE.MeshLambertMaterial({color:0x6b7480}));
+  fus.rotation.x=Math.PI/2;planeGrp.add(fus);
+  const wing=new THREE.Mesh(new THREE.BoxGeometry(30,0.5,5),new THREE.MeshLambertMaterial({color:0x5a6470}));
+  planeGrp.add(wing);
+  const tail=new THREE.Mesh(new THREE.BoxGeometry(8,4,0.5),new THREE.MeshLambertMaterial({color:0x5a6470}));
+  tail.position.set(0,2.5,11);planeGrp.add(tail);
+  planeGrp.position.copy(planeStart);
+  scene.add(planeGrp);
+}
+function updateDrop(dt){
+  gunGroup.visible=false;
+  if(dropPhase==='plane'){
+    planeT+=dt;
+    const t=planeT/PLANE_DUR;
+    planeGrp.position.copy(planeStart).addScaledVector(planeDir,MAP_HALF*2.1*t);
+    planeGrp.rotation.y=Math.atan2(planeDir.x,planeDir.z);
+    player.pos.copy(planeGrp.position);player.pos.y-=3;
+    if(keys['Space']||t>=1){
+      dropPhase='fall';player.velY=-6;
+      announce('강하! WASD로 방향 조절 — 40m에서 낙하산 자동 전개');
+    }
+  } else {
+    const g=terrainH(player.pos.x,player.pos.z);
+    const targetVy=dropPhase==='fall'?-46:-6.5;
+    player.velY+=(targetVy-player.velY)*Math.min(1,dt*2.2);
+    player.pos.y+=player.velY*dt;
+    const ctl=dropPhase==='fall'?15:8;
+    const f=new THREE.Vector3(Math.sin(player.yaw),0,Math.cos(player.yaw));
+    const r=new THREE.Vector3(f.z,0,-f.x);
+    let mx=0,mz=0;
+    if(keys['KeyW']){mx-=f.x;mz-=f.z;}
+    if(keys['KeyS']){mx+=f.x;mz+=f.z;}
+    if(keys['KeyA']){mx-=r.x;mz-=r.z;}
+    if(keys['KeyD']){mx+=r.x;mz+=r.z;}
+    const L=Math.hypot(mx,mz);
+    if(L>0.1){
+      player.pos.x=clamp(player.pos.x+mx/L*ctl*dt,-MAP_HALF,MAP_HALF);
+      player.pos.z=clamp(player.pos.z+mz/L*ctl*dt,-MAP_HALF,MAP_HALF);
+    }
+    if(dropPhase==='fall'&&player.pos.y-g<40){dropPhase='chute';announce('낙하산 전개!');}
+    if(player.pos.y<=g+EYE_STAND){
+      player.pos.y=g+EYE_STAND;player.velY=0;player.onGround=true;
+      dropPhase='game';
+      if(planeGrp)scene.remove(planeGrp);
+      announce('착지! 파밍을 시작하세요');
+    }
+  }
+  camera.position.copy(player.pos);
+  camera.rotation.set(0,0,0);
+  camera.rotateY(player.yaw);
+  camera.rotateX(player.pitch);
+  playerModel.visible=viewMode==='tps'&&!player.dead&&dropPhase!=='plane';
+  if(playerModel.visible){
+    playerModel.position.set(player.pos.x,player.pos.y-EYE_STAND,player.pos.z);
+    playerModel.rotation.y=player.yaw;
+    playerModel.userData.eq.chute.visible=(dropPhase==='chute');
+  }
+}
 // ================= 플레이어 / 모델 =================
 const player={pos:new THREE.Vector3(0,3,0),velY:0,yaw:0,pitch:0,hp:100,stance:'stand',onGround:true,dead:false,kills:0,eyeCur:1.7,boostT:0};
 const EYE_STAND=1.7,EYE_PRONE=0.55;
 let viewMode='fps';
+let dropPhase='plane';
 const gunGroup=new THREE.Group();
 function buildGun(type){
   while(gunGroup.children.length)gunGroup.remove(gunGroup.children[0]);
@@ -777,8 +901,9 @@ function makeCharModel(color){
   const vest=new THREE.Mesh(new THREE.BoxGeometry(0.62,0.5,0.4),new THREE.MeshLambertMaterial({color:0x2a3d5a}));vest.position.y=1.15;vest.visible=false;vest.userData.part='body';
   const bag=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.6,0.28),new THREE.MeshLambertMaterial({color:0xb08d57}));bag.position.set(0,1.15,0.36);bag.visible=false;bag.userData.part='body';
   const gun=new THREE.Mesh(new THREE.BoxGeometry(0.07,0.09,0.75),new THREE.MeshLambertMaterial({color:0x222426}));gun.position.set(0.3,1.15,-0.35);gun.visible=false;gun.userData.part='body';
-  g.add(torso,head,legL,legR,armL,armR,helmet,vest,bag,gun);
-  g.userData.eq={helmet,vest,bag,gun,legL,legR};
+  const chute=new THREE.Mesh(new THREE.ConeGeometry(1.8,1.4,9,1,true),new THREE.MeshLambertMaterial({color:0xe8e8e8,side:THREE.DoubleSide}));chute.position.y=3.0;chute.visible=false;
+  g.add(torso,head,legL,legR,armL,armR,helmet,vest,bag,gun,chute);
+  g.userData.eq={helmet,vest,bag,gun,legL,legR,chute};
   g.traverse(o=>{o.castShadow=true;});
   return g;
 }
@@ -864,6 +989,7 @@ function updateRemotes(dt){
     const sw=(spd>0.6&&!(r.stance==='prone'||crawl))?Math.sin(r.walkT)*0.55:0;
     const eqR=r.group.userData.eq;
     eqR.legL.rotation.x=sw;eqR.legR.rotation.x=-sw;
+    eqR.chute.visible=!!r.drop&&(y-terrainH(x,z))<55;
     r.group.position.set(x,y-eyeOff,z);
     r.group.rotation.y=yaw;
     r.group.scale.y=(r.stance==='prone'||crawl)?0.5:1;
@@ -1264,7 +1390,7 @@ function connect(){
       const now=performance.now();
       let aliveN=0;
       for(const arr of m.p){
-        const [id,x,y,z,yaw,pr,hp,alive,helmet,bag,wIdx,armor]=arr;
+        const [id,x,y,z,yaw,pr,hp,alive,helmet,bag,wIdx,armor,dflag]=arr;
         aliveN+=alive;
         if(id===myId)continue;
         const r=remotes.get(id)||addRemote(id,'플레이어'+id,x,y,z);
@@ -1272,7 +1398,7 @@ function connect(){
         if(r.buf.length>30)r.buf.shift();
         r.stance=pr?'prone':'stand';
         r.hp=hp;r.alive=!!alive;
-        r.helmet=helmet;r.bag=bag;r.wIdx=wIdx;r.armor=armor;
+        r.helmet=helmet;r.bag=bag;r.wIdx=wIdx;r.armor=armor;r.drop=dflag||0;
       }
       occByPlayer.clear();
       for(const ca of (m.c||[])){
@@ -1343,7 +1469,7 @@ function connect(){
       const r=remotes.get(m.id);
       if(r){
         const d=Math.hypot(r.group.position.x-player.pos.x,r.group.position.z-player.pos.z);
-        playShot(Math.max(0.02,0.25-d*0.002),true);
+        playShot(Math.max(0.02,0.25-d*0.002),true,m.w);
       }
     }
     else if(m.t==='nade'){
@@ -1465,7 +1591,10 @@ function playNoise(vol,dur,lp){
     src.connect(f).connect(g).connect(ctx.destination);src.start();
   }catch(e){}
 }
-function playShot(vol,far){playNoise(vol,far?0.25:0.12,far?900:3500);}
+function playShot(vol,far,w){
+  const prof={rifle:[0.12,3500,0.25,900],shotgun:[0.2,1500,0.32,650],sniper:[0.16,2600,0.3,800]}[w]||[0.12,3500,0.25,900];
+  playNoise(vol,far?prof[2]:prof[0],far?prof[3]:prof[1]);
+}
 function playBoom(vol){playNoise(vol||0.5,0.7,240);}
 function playHit(){
   if(!soundOn)return;
@@ -1523,6 +1652,7 @@ document.addEventListener('keydown',e=>{
   keys[e.code]=true;
   if(e.code==='ShiftLeft'&&!e.repeat)shiftUsed=false;
   if(player.dead)return;
+  if(dropPhase!=='game'&&['KeyE','KeyF','KeyC','KeyR','KeyG','KeyT'].includes(e.code))return;
   if(e.code==='KeyR'&&!driving)startReload();
   if(e.code==='KeyC'&&!driving&&player.hp>=20){
     player.stance=player.stance==='prone'?'stand':'prone';
@@ -1653,13 +1783,13 @@ function meleeAttack(){
   setTimeout(()=>{gunGroup.rotation.x=0;},130);
 }
 function tryFire(){
-  if(player.dead||!started||reloading>0||fireCooldown>0||driving)return;
+  if(player.dead||!started||reloading>0||fireCooldown>0||driving||dropPhase!=='game')return;
   if(!heldWeapon){meleeAttack();return;}
   const wp=WEAPONS[heldWeapon.wtype];
   if(heldWeapon.ammo<=0){startReload();return;}
   heldWeapon.ammo--;
   fireCooldown=60/wp.rpm;
-  playShot(0.3,false);
+  playShot(heldWeapon.wtype==='shotgun'?0.42:0.3,false,heldWeapon.wtype);
   flash.intensity=2.5;
   setTimeout(()=>{flash.intensity=0;},45);
   player.pitch+=wp.recoil*(0.7+Math.random()*0.6);
@@ -1697,6 +1827,9 @@ function tryFire(){
           const isHead=h.object.userData.part==='head';
           const hm=document.getElementById('hitmarker');
           hm.style.opacity=1;setTimeout(()=>hm.style.opacity=0,110);
+          const bl=new THREE.Mesh(new THREE.SphereGeometry(0.5,8,8),new THREE.MeshBasicMaterial({color:0xaa1111,transparent:true,opacity:0.8,depthWrite:false}));
+          bl.position.copy(h.point);scene.add(bl);
+          effects.push({mesh:bl,t:0,dur:0.3,maxScale:0.9});
           playHit();
           if(ws&&ws.readyState===1)ws.send(JSON.stringify({t:'hit',target:root.userData.rid,w:heldWeapon.wtype,head:isHead}));
         }
@@ -1750,6 +1883,7 @@ function updatePassenger(dt){
 }
 function updatePlayer(dt){
   if(player.dead||!worldBuilt)return;
+  if(dropPhase!=='game'){updateDrop(dt);return;}
   if(passengerCar){updatePassenger(dt);return;}
   if(driving){updateDriving(dt);return;}
   const crawl=player.hp>0&&player.hp<20;
@@ -1840,6 +1974,7 @@ function updatePlayer(dt){
     playerModel.rotation.y=player.yaw;
     playerModel.scale.y=prone?0.5:1;
     const eqP=playerModel.userData.eq;
+    eqP.chute.visible=false;
     const swP=(len>0&&player.onGround&&!prone)?Math.sin(bobT*2)*0.55:0;
     eqP.legL.rotation.x=swP;eqP.legR.rotation.x=-swP;
     applyGearToModel(playerModel,hasHelmet,armorLocal,bagLevel,heldWeapon?WNAME2IDX[heldWeapon.wtype]:0);
@@ -1907,6 +2042,12 @@ function updateRain(dt){
   }
   p.needsUpdate=true;
   rainObj.position.set(camera.position.x,camera.position.y-18,camera.position.z);
+  let indoors=false;
+  const fyR=player.pos.y-player.eyeCur;
+  for(const b of mmBuildings){
+    if(b.topY!==undefined&&Math.abs(player.pos.x-b.x)<b.hx&&Math.abs(player.pos.z-b.z)<b.hz&&fyR<b.topY-0.6){indoors=true;break;}
+  }
+  rainObj.visible=!indoors;
 }
 
 // ================= 자기장 =================
@@ -2050,6 +2191,7 @@ setInterval(()=>{
     yaw:+player.yaw.toFixed(3),pitch:+player.pitch.toFixed(3),
     stance:(player.stance==='prone'||player.hp<20)?'prone':'stand',
     w:heldWeapon?heldWeapon.wtype:'',
+    d:dropPhase!=='game'?1:0,
   }));
 },66);
 setInterval(()=>{
